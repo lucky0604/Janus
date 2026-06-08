@@ -10,7 +10,7 @@ interface FieldState {
 }
 
 export function SettingsScene() {
-  const { apiKey, baseUrl, modelName, setApiKey, setBaseUrl, setModelName } = useChatStore();
+  const { apiKey, baseUrl, modelName, workspacePath, setApiKey, setBaseUrl, setModelName, setWorkspacePath } = useChatStore();
 
   const [fields, setFields] = useState<Record<string, FieldState>>({
     baseUrl: { value: baseUrl, status: 'idle' },
@@ -18,7 +18,7 @@ export function SettingsScene() {
     modelName: { value: modelName, status: 'idle' },
   });
 
-  const [workspace, setWorkspace] = useState('');
+  const [localWorkspace, setLocalWorkspace] = useState(workspacePath);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const hasUnsaved = Object.values(fields).some((f) => f.status === 'unsaved');
@@ -168,8 +168,13 @@ export function SettingsScene() {
             <input
               type="text"
               className={styles.input}
-              value={workspace}
-              onChange={(e) => setWorkspace(e.target.value)}
+              value={localWorkspace}
+              onChange={(e) => setLocalWorkspace(e.target.value)}
+              onBlur={() => {
+                const trimmed = localWorkspace.trim();
+                setLocalWorkspace(trimmed);
+                setWorkspacePath(trimmed);
+              }}
               placeholder="/path/to/your/project"
               spellCheck={false}
             />

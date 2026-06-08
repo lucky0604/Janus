@@ -10,6 +10,7 @@ interface ChatState {
   apiKey: string;
   baseUrl: string;
   modelName: string;
+  workspacePath: string;
   sessionId: string;
 
   // Actions
@@ -18,6 +19,7 @@ interface ChatState {
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
   setModelName: (model: string) => void;
+  setWorkspacePath: (path: string) => void;
   clearError: () => void;
   addMessage: (msg: Message) => void;
 }
@@ -34,13 +36,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isConnecting: false,
   connectionError: false,
   errorMessage: null,
-  apiKey: sessionStorage.getItem('janus_api_key') || '',
-  baseUrl: sessionStorage.getItem('janus_base_url') || 'https://api.openai.com/v1',
-  modelName: sessionStorage.getItem('janus_model') || 'gpt-4o',
+  apiKey: localStorage.getItem('janus_api_key') || '',
+  baseUrl: localStorage.getItem('janus_base_url') || 'https://api.openai.com/v1',
+  modelName: localStorage.getItem('janus_model') || 'gpt-4o',
+  workspacePath: localStorage.getItem('janus_workspace') || '',
   sessionId: generateId(),
 
   sendMessage: async (content: string) => {
-    const { apiKey, baseUrl, modelName, sessionId, messages } = get();
+    const { apiKey, baseUrl, modelName, workspacePath, sessionId, messages } = get();
     if (!apiKey) {
       set({ errorMessage: 'API key required' });
       return;
@@ -82,7 +85,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         },
         body: JSON.stringify({
           messages: requestMessages,
-          workspacePath: '',
+          workspacePath: workspacePath.trim(),
           sessionId,
           baseUrl: baseUrl.trim(),
           modelName: modelName.trim(),
@@ -211,18 +214,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setApiKey: (key: string) => {
-    sessionStorage.setItem('janus_api_key', key);
+    localStorage.setItem('janus_api_key', key);
     set({ apiKey: key, errorMessage: null });
   },
 
   setBaseUrl: (url: string) => {
-    sessionStorage.setItem('janus_base_url', url);
+    localStorage.setItem('janus_base_url', url);
     set({ baseUrl: url });
   },
 
   setModelName: (model: string) => {
-    sessionStorage.setItem('janus_model', model);
+    localStorage.setItem('janus_model', model);
     set({ modelName: model });
+  },
+
+  setWorkspacePath: (path: string) => {
+    localStorage.setItem('janus_workspace', path);
+    set({ workspacePath: path });
   },
 
   clearError: () => set({ errorMessage: null, connectionError: false }),
