@@ -1,10 +1,20 @@
 // ---- Messages ----
+export interface ToolMeta {
+  name: string;
+  status: 'running' | 'done' | 'error';
+  argSummary: string;
+  resultSummary?: string;
+  sources?: Array<{ title: string; url: string }>;
+  rawOutput?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   toolCallId?: string;
   toolCalls?: ToolCall[];
+  toolMeta?: ToolMeta;
   timestamp: number;
 }
 

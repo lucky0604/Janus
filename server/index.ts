@@ -1,7 +1,11 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import type { ViteDevServer } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { Message } from '../shared/types';
 import { handleChatStream, handleGetMessages } from './routes/chat';
+import { agentRegistry } from './agents/registry';
 
 // Register all tools (side-effect imports)
 import './tools/read-file';
@@ -10,6 +14,38 @@ import './tools/search-content';
 import './tools/write-file';
 import './tools/shell-exec';
 import './tools/git-ops';
+import './tools/web-search';
+import './tools/web-fetch';
+
+// Register Work Mode agent
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const workModePromptPath = path.resolve(__dirname, 'agents/prompts/work-mode.md');
+let workModePrompt = '';
+try {
+  workModePrompt = fs.readFileSync(workModePromptPath, 'utf-8').trim();
+} catch {
+  // Will fall back to DEFAULT_SYSTEM_PROMPT in agent-loop
+}
+
+agentRegistry.register({
+  id: 'work',
+  name: 'Work Mode',
+  description: 'Daily productivity assistant — search the web, read pages, manage files, run shell commands',
+  systemPrompt: workModePrompt,
+  tools: [
+    'web_search', 'web_fetch',
+    'read_file', 'write_file', 'list_dir_tree', 'search_content',
+    'shell_exec', 'git_ops',
+  ],
+  capabilities: [
+    { category: 'docs', level: 4 },
+    { category: 'analysis', level: 3 },
+    { category: 'file_ops', level: 5 },
+    { category: 'ops', level: 3 },
+  ],
+  iconKey: 'briefcase',
+  status: 'active',
+});
 
 export function configureApiRoutes(server: ViteDevServer) {
   server.middlewares.use('/api', async (req: IncomingMessage, res: ServerResponse) => {
@@ -67,6 +103,7 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
   const sessionId = (body.sessionId as string) || crypto.randomUUID();
   const baseUrl = (typeof body.baseUrl === 'string' && body.baseUrl.trim()) || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
   const modelName = (typeof body.modelName === 'string' && body.modelName.trim()) || process.env.OPENAI_MODEL || 'gpt-4o';
+  const agentId = (body.agentId as string) || 'work';
 
   // Set up AbortController linked to client disconnect
   const abortController = new AbortController();
@@ -82,7 +119,7 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
 
   try {
     const stream = await handleChatStream(
-      { messages: messages as Message[], workspacePath, sessionId, apiKey, baseUrl, modelName },
+      { messages: messages as Message[], workspacePath, sessionId, apiKey, baseUrl, modelName, agentId },
       abortController.signal
     );
 

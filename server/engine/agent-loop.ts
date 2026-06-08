@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import type { Message, ToolCall, ToolDefinition } from '../../shared/types';
 import { OpenAIAdapter } from '../ai/openai-adapter';
 import type { StreamEvent } from '../ai/adapter';
@@ -6,7 +9,7 @@ import { LoopDetector } from './loop-detector';
 import { ContextCompressor } from './context-compressor';
 import { CancellationToken } from './cancellation';
 
-const SYSTEM_PROMPT = `You are Janus, an AI workspace assistant. You help users analyze, understand, and work with their local project files.
+const DEFAULT_SYSTEM_PROMPT = `You are Janus, an AI workspace assistant. You help users analyze, understand, and work with their local project files.
 
 ## Your Capabilities
 - Read and write files
@@ -34,6 +37,34 @@ export interface ExecutionConfig {
   modelMaxTokens?: number;
   baseUrl?: string;
   modelName?: string;
+  systemPrompt?: string;
+}
+
+/**
+ * Load system prompt from a markdown file, falling back to the default.
+ */
+function loadPromptFromFile(relativePath: string): string | null {
+  try {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const filePath = path.resolve(__dirname, relativePath);
+    if (fs.existsSync(filePath)) {
+      return fs.readFileSync(filePath, 'utf-8').trim();
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Resolve the effective system prompt:
+ * 1. Explicit config.systemPrompt
+ * 2. Prompt file at agents/prompts/work-mode.md
+ * 3. DEFAULT_SYSTEM_PROMPT fallback
+ */
+function resolveSystemPrompt(config: ExecutionConfig): string {
+  if (config.systemPrompt) return config.systemPrompt;
+  const filePrompt = loadPromptFromFile('../agents/prompts/work-mode.md');
+  if (filePrompt) return filePrompt;
+  return DEFAULT_SYSTEM_PROMPT;
 }
 
 export async function* executeDialogTurn(
@@ -60,7 +91,7 @@ export async function* executeDialogTurn(
     messagesArr.unshift({
       id: crypto.randomUUID(),
       role: 'system',
-      content: SYSTEM_PROMPT,
+      content: resolveSystemPrompt(config),
       timestamp: Date.now(),
     });
   }
@@ -104,8 +135,8 @@ export async function* executeDialogTurn(
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'CancelledError') {
-        yield { type: 'done', data: { reason: 'cancelled' } };
-        return;
+      yield { type: 'done', data: { reason: 'cancelled', messages: messagesArr } };
+      return;
       }
       yield { type: 'error', data: { message: err instanceof Error ? err.message : 'AI call failed' } };
       return;
@@ -115,7 +146,7 @@ export async function* executeDialogTurn(
 
     if (toolCalls.length === 0) {
       messagesArr.push({ id: crypto.randomUUID(), role: 'assistant', content: textContent, timestamp: Date.now() });
-      yield { type: 'done', data: { reason: 'complete' } };
+      yield { type: 'done', data: { reason: 'complete', messages: messagesArr } };
       return;
     }
 
@@ -125,7 +156,7 @@ export async function* executeDialogTurn(
       if (loopDetected) {
         messagesArr.push({ id: crypto.randomUUID(), role: 'system', content: 'Loop detected. Try a different approach.', timestamp: Date.now() });
         if (detector.shouldTerminate()) {
-          yield { type: 'done', data: { reason: 'loop_detected' } };
+          yield { type: 'done', data: { reason: 'loop_detected', messages: messagesArr } };
           return;
         }
       }
@@ -148,5 +179,5 @@ export async function* executeDialogTurn(
     }
     rounds++;
   }
-  yield { type: 'done', data: { reason: 'max_rounds' } };
+  yield { type: 'done', data: { reason: 'max_rounds', messages: messagesArr } };
 }
