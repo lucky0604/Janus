@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Message, StreamEvent } from '../../shared/types';
+import type { Message, ToolMeta, StreamEvent, SSEToolCall, SSEToolResult } from '../../shared/types';
 
 interface ChatState {
   messages: Message[];
@@ -30,6 +30,86 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+/**
+ * Build a short human-readable summary of a tool call's arguments.
+ */
+function summarizeToolArgs(name: string, args: Record<string, unknown>): string {
+  switch (name) {
+    case 'web_search':
+      return `"${(args.query as string) || ''}"`;
+    case 'web_fetch':
+      return (args.url as string) || '';
+    case 'read_file':
+      return (args.path as string) || '';
+    case 'list_dir':
+      return (args.path as string) || '';
+    case 'search_content':
+      return `"${(args.pattern as string) || ''}"`;
+    case 'shell_exec':
+      return (args.command as string) || '';
+    case 'git_status':
+      return '';
+    case 'git_diff':
+      return '';
+    case 'write_file':
+      return (args.path as string) || '';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Build a ToolMeta from a tool_result event, parsing the output for
+ * structured information like source URLs.
+ */
+function buildResultMeta(name: string, output: string, success: boolean): Partial<ToolMeta> {
+  const meta: Partial<ToolMeta> = {
+    status: success ? 'done' : 'error',
+  };
+
+  if (success) {
+    meta.resultSummary = summarizeResult(name, output);
+  }
+
+  // Extract sources for web_search results
+  if (name === 'web_search' && success) {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed?.results && Array.isArray(parsed.results)) {
+        meta.sources = parsed.results.map((r: { title?: string; url?: string; snippet?: string }) => ({
+          title: r.title || '',
+          url: r.url || '',
+        }));
+        meta.resultSummary = `${parsed.results.length} results from ${(meta.sources || []).map(s => { try { return new URL(s.url).hostname.replace('www.', ''); } catch { return s.url; } }).filter((h: string, i: number, a: string[]) => a.indexOf(h) === i).slice(0, 5).join(', ')}`;
+      }
+    } catch { /* not JSON */ }
+  }
+
+  // Extract URL for web_fetch results
+  if (name === 'web_fetch' && success) {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed?.url) {
+        meta.sources = [{ title: parsed.title || parsed.url, url: parsed.url }];
+        meta.resultSummary = parsed.title ? `${parsed.title}` : 'Page fetched';
+      }
+    } catch { /* not JSON */ }
+  }
+
+  meta.rawOutput = output;
+  return meta;
+}
+
+function summarizeResult(_name: string, output: string): string {
+  try {
+    const parsed = JSON.parse(output);
+    if (parsed?.totalCount !== undefined) return `${parsed.totalCount} results`;
+    if (parsed?.error) return `Error: ${parsed.error}`;
+    if (typeof parsed === 'string') return parsed.slice(0, 80);
+  } catch { /* not JSON */ }
+  return output.slice(0, 80);
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isStreaming: false,
@@ -56,15 +136,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: Date.now(),
     };
 
-    const assistantMsg: Message = {
-      id: generateId(),
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-
     set({
-      messages: [...messages, userMsg, assistantMsg],
+      messages: [...messages, userMsg],
       isStreaming: true,
       isConnecting: true,
       connectionError: false,
@@ -75,6 +148,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const requestMessages = [...messages, userMsg];
 
     abortController = new AbortController();
+
+    // Track pending tool calls so we can match results
+    const pendingToolCalls = new Map<string, { name: string; args: Record<string, unknown> }>();
 
     try {
       const response = await fetch('/api/chat/stream', {
@@ -112,7 +188,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const decoder = new TextDecoder();
       let buffer = '';
-      let accumulatedContent = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -121,14 +196,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         buffer += decoder.decode(value, { stream: true });
 
         // SSE: events are separated by blank lines (\n\n)
-        // Split on double-newline to get complete event blocks
         const eventBlocks = buffer.split(/\n\n/);
         // Last block may be incomplete — keep in buffer
         buffer = eventBlocks.pop() || '';
 
         for (const block of eventBlocks) {
-          // A block may have multiple data: lines (SSE multi-line data)
-          // Collect all data: lines within this block
           const dataLines: string[] = [];
           for (const line of block.split(/\r?\n/)) {
             const trimmed = line.trim();
@@ -139,7 +211,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           if (dataLines.length === 0) continue;
 
-          // Join multi-line SSE data
           const json = dataLines.join('');
           if (json === '[DONE]') continue;
 
@@ -149,21 +220,85 @@ export const useChatStore = create<ChatState>((set, get) => ({
             switch (event.type) {
               case 'text_delta': {
                 const delta = (event.data as { text: string }).text;
-                accumulatedContent += delta;
                 const msgs = [...get().messages];
                 const last = msgs[msgs.length - 1];
                 if (last && last.role === 'assistant') {
-                  last.content = accumulatedContent;
+                  // Append to existing assistant message (same round)
+                  last.content += delta;
                   set({ messages: [...msgs] });
+                } else {
+                  // New round after tool calls: create a fresh assistant message.
+                  // The previous round's accumulated content belongs to that round's message.
+                  const newAssistant: Message = {
+                    id: generateId(),
+                    role: 'assistant',
+                    content: delta,
+                    timestamp: Date.now(),
+                  };
+                  set({ messages: [...msgs, newAssistant] });
                 }
                 break;
               }
-              case 'tool_call':
-                // Tool calls are informational during streaming
+              case 'tool_call': {
+                const tc = event.data as SSEToolCall;
+                let args: Record<string, unknown> = {};
+                try { args = JSON.parse(tc.arguments || '{}'); } catch { /* ignore */ }
+                const argSummary = summarizeToolArgs(tc.name, args);
+                pendingToolCalls.set(tc.id, { name: tc.name, args });
+
+                // Insert a tool message showing "running" state
+                const toolMsg: Message = {
+                  id: generateId(),
+                  role: 'tool',
+                  content: '',
+                  toolCallId: tc.id,
+                  timestamp: Date.now(),
+                  toolMeta: {
+                    name: tc.name,
+                    status: 'running',
+                    argSummary,
+                  } as ToolMeta,
+                };
+                set({ messages: [...get().messages, toolMsg] });
                 break;
-              case 'tool_result':
-                // Tool results are informational during streaming
+              }
+              case 'tool_result': {
+                const tr = event.data as SSEToolResult;
+                const pending = pendingToolCalls.get(tr.id);
+                const toolName = pending?.name || tr.name;
+
+                const resultMeta = buildResultMeta(toolName, tr.output, tr.success);
+
+                // Update the matching tool message with result data
+                const msgs = [...get().messages];
+                const toolMsg = msgs.find(m => m.role === 'tool' && m.toolCallId === tr.id);
+                if (toolMsg) {
+                  toolMsg.content = tr.output;
+                  toolMsg.toolMeta = {
+                    name: toolName,
+                    argSummary: pending ? summarizeToolArgs(toolName, pending.args) : '',
+                    ...resultMeta,
+                  } as ToolMeta;
+                  set({ messages: [...msgs] });
+                } else {
+                  // No matching tool_call seen — insert a completed tool message
+                  const newToolMsg: Message = {
+                    id: generateId(),
+                    role: 'tool',
+                    content: tr.output,
+                    toolCallId: tr.id,
+                    timestamp: Date.now(),
+                    toolMeta: {
+                      name: toolName,
+                      argSummary: '',
+                      ...resultMeta,
+                    } as ToolMeta,
+                  };
+                  set({ messages: [...msgs, newToolMsg] });
+                }
+                pendingToolCalls.delete(tr.id);
                 break;
+              }
               case 'done':
                 set({ isStreaming: false });
                 return;

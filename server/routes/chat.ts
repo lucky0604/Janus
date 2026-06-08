@@ -1,12 +1,11 @@
 import type { Message, StreamEvent } from '../../shared/types';
 import { executeDialogTurn } from '../engine/agent-loop';
 import { toolRegistry } from '../tools/registry';
+import { agentRegistry } from '../agents/registry';
+import { saveSession, loadSession } from '../persistence/session-store';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
-// In-memory message store per session (Phase 1 - no persistence)
-const sessionMessages = new Map<string, Message[]>();
 
 export interface ChatStreamRequest {
   messages: Message[];
@@ -15,18 +14,26 @@ export interface ChatStreamRequest {
   apiKey: string;
   baseUrl?: string;
   modelName?: string;
+  agentId?: string;
 }
 
 export async function handleChatStream(
   req: ChatStreamRequest,
   signal: AbortSignal
 ): Promise<ReadableStream> {
-  const { messages, sessionId, workspacePath, apiKey, baseUrl, modelName } = req;
-  const resolvedPath =
-    workspacePath || process.env.JANUS_WORKSPACE || process.cwd();
+  const { messages, sessionId, workspacePath, apiKey, baseUrl, modelName, agentId } = req;
+  const resolvedPath = workspacePath || process.env.JANUS_WORKSPACE || process.cwd();
 
-  // Store messages in session
-  sessionMessages.set(sessionId, [...messages]);
+  // Agent lookup: get system prompt and tool whitelist from registry
+  const agent = agentId ? agentRegistry.get(agentId) : agentRegistry.get('work');
+  const systemPrompt = agent?.systemPrompt;
+  const agentTools = agent?.tools;
+
+  // If agent specifies tool whitelist, filter; otherwise use all tools
+  const allTools = toolRegistry.getAll();
+  const tools = agentTools
+    ? allTools.filter((t) => agentTools.includes(t.name))
+    : allTools;
 
   const encoder = new TextEncoder();
 
@@ -37,8 +44,7 @@ export async function handleChatStream(
       };
 
       try {
-        // t.parameters is already a complete JSON Schema — pass as-is
-        const tools = toolRegistry.getAll().map((t) => ({
+        const toolDefs = tools.map((t) => ({
           name: t.name,
           description: t.description,
           parameters: t.parameters,
@@ -51,11 +57,12 @@ export async function handleChatStream(
           apiKey,
           baseUrl,
           modelName,
+          systemPrompt,
         };
 
         let doneEmitted = false;
 
-        for await (const event of executeDialogTurn(messages, tools, config, signal)) {
+        for await (const event of executeDialogTurn(messages, toolDefs, config, signal)) {
           if (signal.aborted) {
             push({ type: 'done', data: { reason: 'cancelled' } });
             doneEmitted = true;
@@ -66,24 +73,20 @@ export async function handleChatStream(
           if (event.type === 'done') {
             push(event);
             doneEmitted = true;
+
+            // Persist session on done
+            const doneData = event.data as { reason: string; messages?: Message[] };
+            if (doneData.messages) {
+              try {
+                await saveSession(sessionId, doneData.messages, agentId || 'work');
+              } catch {
+                // Persistence failure should not break the stream
+              }
+            }
             break;
           }
 
           push(event);
-
-          // Track tool results in messages
-          if (event.type === 'tool_result') {
-            const current = sessionMessages.get(sessionId) || [];
-            const data = event.data as { id: string; name: string; success: boolean; output: string };
-            current.push({
-              id: crypto.randomUUID(),
-              role: 'tool',
-              content: data.output,
-              toolCallId: data.id,
-              timestamp: Date.now(),
-            });
-            sessionMessages.set(sessionId, current);
-          }
         }
 
         if (!doneEmitted) {
@@ -105,6 +108,10 @@ export async function handleChatStream(
 }
 
 export async function handleGetMessages(sessionId: string): Promise<{ messages: Message[] }> {
-  const messages = sessionMessages.get(sessionId) || [];
-  return { messages };
+  // Load from persistent session store
+  const session = await loadSession(sessionId);
+  if (session) {
+    return { messages: session.messages };
+  }
+  return { messages: [] };
 }
