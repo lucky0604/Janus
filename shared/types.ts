@@ -8,6 +8,26 @@ export interface ToolMeta {
   rawOutput?: string;
 }
 
+// ---- Event Meta (for Memory/Evolution SSE events) ----
+export interface MemoryRecallMeta {
+  type: 'memory_recall';
+  count: number;
+  memories: Array<{ id: string; content: string; category: string; source: string; staleness?: string }>;
+}
+
+export interface SkillReviewMeta {
+  type: 'skill_review';
+  skill: { id: string; name: string; description: string; status: string };
+}
+
+export interface EvolutionEventMeta {
+  type: 'evolution_event';
+  event: string;
+  detail?: string;
+}
+
+export type EventMeta = MemoryRecallMeta | SkillReviewMeta | EvolutionEventMeta;
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -15,6 +35,7 @@ export interface Message {
   toolCallId?: string;
   toolCalls?: ToolCall[];
   toolMeta?: ToolMeta;
+  eventMeta?: EventMeta;
   timestamp: number;
 }
 
@@ -45,6 +66,8 @@ export interface ToolDefinition {
 export interface ToolContext {
   workspacePath: string;
   sessionId: string;
+  projectPath?: string;  // For memory scoping (optional)
+  memoryContext?: unknown;  // Server-only MemoryContext — typed as unknown here, cast in server
 }
 
 // ---- AI Adapter ----
@@ -53,6 +76,9 @@ export type StreamEventType =
   | 'tool_call'
   | 'tool_result'
   | 'thinking'
+  | 'memory_recall'    // Memory recall notification
+  | 'skill_review'     // Skill review request
+  | 'evolution_event'  // Evolution event
   | 'error'
   | 'done';
 
@@ -99,6 +125,26 @@ export interface DialogTurn {
   endTime?: string;
 }
 
+// ---- Memory System (Frontend-visible types) ----
+
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  category: 'fact' | 'preference' | 'procedure' | 'pattern' | 'context';
+  source: 'MEMORY.md' | 'daily_log' | 'conversation';
+  createdAt: string;
+  staleness?: string;  // e.g. "47 days ago"
+}
+
+export interface SkillDraft {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
 // ---- SSE Event from server ----
 export interface SSETextDelta {
   text: string;
@@ -119,4 +165,18 @@ export interface SSEToolResult {
 
 export interface SSEDone {
   reason: 'complete' | 'max_rounds' | 'loop_detected' | 'cancelled' | 'error';
+}
+
+export interface SSEMemoryRecall {
+  count: number;
+  memories: Array<{ id: string; content: string; category: string; source: string; staleness?: string }>;
+}
+
+export interface SSESkillReview {
+  skill: { id: string; name: string; description: string; status: string };
+}
+
+export interface SSEEvolutionEvent {
+  event: string;
+  detail?: string;
 }
