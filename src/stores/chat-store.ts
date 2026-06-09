@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Message, ToolMeta, StreamEvent, SSEToolCall, SSEToolResult } from '../../shared/types';
+import type { Message, ToolMeta, StreamEvent, SSEToolCall, SSEToolResult, SSEMemoryRecall, SSESkillReview, SSEEvolutionEvent } from '../../shared/types';
 
 interface ChatState {
   messages: Message[];
@@ -302,6 +302,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
               case 'done':
                 set({ isStreaming: false });
                 return;
+              case 'memory_recall': {
+                const mr = event.data as SSEMemoryRecall;
+                const memMsg: Message = {
+                  id: generateId(),
+                  role: 'system',
+                  content: '',
+                  timestamp: Date.now(),
+                  eventMeta: {
+                    type: 'memory_recall',
+                    count: mr.count,
+                    memories: mr.memories,
+                  },
+                };
+                set({ messages: [...get().messages, memMsg] });
+                break;
+              }
+              case 'skill_review': {
+                const sr = event.data as SSESkillReview;
+                const skillMsg: Message = {
+                  id: generateId(),
+                  role: 'system',
+                  content: '',
+                  timestamp: Date.now(),
+                  eventMeta: {
+                    type: 'skill_review',
+                    skill: sr.skill,
+                  },
+                };
+                set({ messages: [...get().messages, skillMsg] });
+                break;
+              }
+              case 'evolution_event': {
+                const ee = event.data as SSEEvolutionEvent;
+                const evoMsg: Message = {
+                  id: generateId(),
+                  role: 'system',
+                  content: '',
+                  timestamp: Date.now(),
+                  eventMeta: {
+                    type: 'evolution_event',
+                    event: ee.event,
+                    detail: ee.detail,
+                  },
+                };
+                set({ messages: [...get().messages, evoMsg] });
+                break;
+              }
               case 'error': {
                 set({
                   isStreaming: false,

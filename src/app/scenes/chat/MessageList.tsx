@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Message, ToolMeta } from '@shared/types';
+import type { Message, ToolMeta, EventMeta, MemoryRecallMeta, SkillReviewMeta, EvolutionEventMeta } from '@shared/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -120,6 +120,78 @@ function ExpandableOutput({ output }: { output: string }) {
   );
 }
 
+// ---- Memory Recall Card ----
+function MemoryRecallCard({ meta }: { meta: MemoryRecallMeta }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={styles.eventCard}>
+      <div className={styles.eventHeader}>
+        <span className={styles.eventIcon}>🧠</span>
+        <span className={styles.eventLabel}>Recalled {meta.count} memor{meta.count === 1 ? 'y' : 'ies'}</span>
+        <button className={styles.expandToggle} onClick={() => setExpanded(!expanded)}>
+          {expanded ? '▼' : '▶'}
+        </button>
+      </div>
+      {expanded && (
+        <div className={styles.eventBody}>
+          {meta.memories.map((m, i) => (
+            <div key={m.id || i} className={styles.memoryItem}>
+              <div className={styles.memoryTag}>
+                <span className={styles.memoryCategory}>{m.category}</span>
+                {m.staleness && <span className={styles.memoryStale}>{m.staleness}</span>}
+              </div>
+              <div className={styles.memoryContent}>{m.content.slice(0, 200)}{m.content.length > 200 ? '...' : ''}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Skill Review Card ----
+function SkillReviewCard({ meta }: { meta: SkillReviewMeta }) {
+  const s = meta.skill;
+  return (
+    <div className={styles.eventCard}>
+      <div className={styles.eventHeader}>
+        <span className={styles.eventIcon}>⚡</span>
+        <span className={styles.eventLabel}>Skill Review</span>
+        <span className={`${styles.skillStatus} ${styles[`skillStatus_${s.status}`]}`}>{s.status}</span>
+      </div>
+      <div className={styles.eventBody}>
+        <div className={styles.skillName}>{s.name}</div>
+        <div className={styles.skillDesc}>{s.description}</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Evolution Event Indicator ----
+function EvolutionEventCard({ meta }: { meta: EvolutionEventMeta }) {
+  return (
+    <div className={styles.eventCard}>
+      <div className={styles.eventHeader}>
+        <span className={styles.eventIcon}>🧬</span>
+        <span className={styles.eventLabel}>{meta.event}</span>
+        {meta.detail && <span className={styles.evoDetail}>{meta.detail}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ---- Event Meta Router ----
+function EventCard({ meta }: { meta: EventMeta }) {
+  switch (meta.type) {
+    case 'memory_recall':
+      return <MemoryRecallCard meta={meta} />;
+    case 'skill_review':
+      return <SkillReviewCard meta={meta} />;
+    case 'evolution_event':
+      return <EvolutionEventCard meta={meta} />;
+  }
+}
+
 // ---- MessageBubble ----
 function MessageBubble({ message, isStreaming: isStreamingProp, i: msgIndex, messagesCount }: {
   message: Message;
@@ -137,16 +209,29 @@ function MessageBubble({ message, isStreaming: isStreamingProp, i: msgIndex, mes
     );
   }
 
+  // System messages with eventMeta get rich event cards
+  if (message.role === 'system' && message.eventMeta) {
+    return (
+      <div className={`${styles.message} ${styles.eventMessage}`}>
+        <EventCard meta={message.eventMeta} />
+      </div>
+    );
+  }
+
   // Legacy tool messages without meta (backward compat)
   if (message.role === 'tool' && !message.toolMeta) {
     return null; // Skip bare tool messages with no metadata
+  }
+
+  // System messages without eventMeta — skip (internal prompts not shown)
+  if (message.role === 'system' && !message.eventMeta) {
+    return null;
   }
 
   const cls = () => {
     switch (message.role) {
       case 'user': return styles.userMessage;
       case 'assistant': return styles.assistantMessage;
-      case 'system': return styles.systemMessage;
       default: return styles.assistantMessage;
     }
   };
@@ -155,7 +240,6 @@ function MessageBubble({ message, isStreaming: isStreamingProp, i: msgIndex, mes
     switch (message.role) {
       case 'user': return 'You';
       case 'assistant': return 'Janus';
-      case 'system': return '';
       default: return '';
     }
   };
