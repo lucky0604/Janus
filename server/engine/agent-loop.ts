@@ -8,6 +8,11 @@ import { toolRegistry } from '../tools/registry';
 import { LoopDetector } from './loop-detector';
 import { ContextCompressor } from './context-compressor';
 import { CancellationToken } from './cancellation';
+import { initMemoryContext, loadResidentMemory, SessionMemory, recallMemories, formatRecalledMemories } from '../memory/index';
+import { NudgeEngine } from '../evolution/nudge-engine';
+import { PatternDetector } from '../evolution/pattern-detector';
+import { craftSkill } from '../evolution/skill-crafter';
+import { submitManyForReview, getPendingReviews } from '../evolution/skill-review';
 
 const DEFAULT_SYSTEM_PROMPT = `You are Janus, an AI workspace assistant. You help users analyze, understand, and work with their local project files.
 
@@ -87,11 +92,25 @@ export async function* executeDialogTurn(
   let rounds = 0;
   let messagesArr = [...messages];
 
+  // ---- Memory System Integration ----
+  const memCtx = initMemoryContext(config.workspacePath, config.sessionId);
+  const sessionMemory = new SessionMemory(memCtx);
+  const residentMemory = loadResidentMemory(memCtx);
+  const nudgeEngine = new NudgeEngine();
+  const patternDetector = new PatternDetector();
+  const janusDir = path.dirname(memCtx.persistentPath);
+
   if (!messagesArr.some((m) => m.role === 'system')) {
+    // Layer 1: Inject resident memory into system prompt
+    const basePrompt = resolveSystemPrompt(config);
+    const systemContent = residentMemory
+      ? `${basePrompt}\n\n${residentMemory}`
+      : basePrompt;
+
     messagesArr.unshift({
       id: crypto.randomUUID(),
       role: 'system',
-      content: resolveSystemPrompt(config),
+      content: systemContent,
       timestamp: Date.now(),
     });
   }
@@ -103,7 +122,32 @@ export async function* executeDialogTurn(
   while (rounds < config.maxRounds) {
     canceller.throwIfCancelled();
 
+    // ---- Layer 2: Per-Turn Memory Recall ----
+    const lastUserMsg = messagesArr.filter((m) => m.role === 'user').at(-1);
+    if (lastUserMsg) {
+      // ---- Memory: Observe user message ----
+      sessionMemory.observe(`User: ${lastUserMsg.content.slice(0, 300)}`);
+    }
+    if (lastUserMsg && rounds > 0) {
+      const recalled = recallMemories(lastUserMsg.content, memCtx);
+      if (recalled.length > 0) {
+        const recallText = formatRecalledMemories(recalled);
+        // Inject as system message before this turn
+        messagesArr.push({
+          id: crypto.randomUUID(),
+          role: 'system',
+          content: recallText,
+          timestamp: Date.now(),
+        });
+        // Notify frontend
+        yield { type: 'memory_recall', data: { count: recalled.length, memories: recalled } };
+      }
+    }
+
     if (compressor.shouldCompress(messagesArr)) {
+      // ---- Layer 3 trigger: Flush observations before compression ----
+      sessionMemory.flush();
+
       messagesArr = compressor.compress(messagesArr);
       yield { type: 'text_delta', data: { text: '\n[Context compressed]\n' } };
     }
@@ -113,7 +157,6 @@ export async function* executeDialogTurn(
     const toolCalls: ToolCall[] = [];
 
     try {
-      // toolDefs.parameters is already a valid JSON Schema object — pass through directly
       const adaptedTools = toolDefs.map((t) => ({
         name: t.name,
         description: t.description,
@@ -146,6 +189,13 @@ export async function* executeDialogTurn(
 
     if (toolCalls.length === 0) {
       messagesArr.push({ id: crypto.randomUUID(), role: 'assistant', content: textContent, timestamp: Date.now() });
+
+      // ---- Memory: Observe final assistant response, then flush ----
+      if (textContent.length > 20) {
+        sessionMemory.observe(`Assistant: ${textContent.slice(0, 500)}`);
+      }
+      sessionMemory.flush();
+
       yield { type: 'done', data: { reason: 'complete', messages: messagesArr } };
       return;
     }
@@ -167,17 +217,83 @@ export async function* executeDialogTurn(
     for (const tc of toolCalls) {
       canceller.throwIfCancelled();
       try {
-        const result = await toolRegistry.execute(tc.name, tc.arguments, { workspacePath: config.workspacePath, sessionId: config.sessionId });
+        const result = await toolRegistry.execute(tc.name, tc.arguments, {
+          workspacePath: config.workspacePath,
+          sessionId: config.sessionId,
+          projectPath: config.workspacePath,
+          memoryContext: memCtx,
+        });
         const output = result.success ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data, null, 2)) : `Error: ${result.error}`;
         messagesArr.push({ id: crypto.randomUUID(), role: 'tool', content: output, toolCallId: tc.id, timestamp: Date.now() });
         yield { type: 'tool_result', data: { id: tc.id, name: tc.name, success: result.success, output } };
+
+        // ---- Memory: Observe tool usage ----
+        sessionMemory.observe(`Tool: ${tc.name} | Success: ${result.success} | Args: ${JSON.stringify(tc.arguments).slice(0, 200)}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Tool failed';
         messagesArr.push({ id: crypto.randomUUID(), role: 'tool', content: `Error: ${msg}`, toolCallId: tc.id, timestamp: Date.now() });
         yield { type: 'tool_result', data: { id: tc.id, name: tc.name, success: false, output: msg } };
+
+        // ---- Memory: Observe tool errors ----
+        sessionMemory.observe(`Tool Error: ${tc.name} | Error: ${msg}`);
       }
     }
     rounds++;
+
+    // ---- Evolution: Adaptive self-reflection → Pattern detection → Skill crafting ----
+    if (nudgeEngine.checkNudge(messagesArr)) {
+      const complexity = nudgeEngine.assessComplexity(messagesArr);
+      const nudgePrompt = nudgeEngine.getNudgePrompt(complexity);
+      messagesArr.push({
+        id: crypto.randomUUID(),
+        role: 'system',
+        content: nudgePrompt,
+        timestamp: Date.now(),
+      });
+
+      // Run pattern detection on the conversation so far
+      const patterns = patternDetector.detect(messagesArr);
+      if (patterns.length > 0) {
+        // Craft skill drafts from detected patterns
+        const drafts = await craftSkill(patterns, { janusDir, useEvolver: true });
+        if (drafts.length > 0) {
+          // Submit drafts for user review
+          submitManyForReview(drafts, janusDir);
+
+          // Notify frontend about new skill drafts
+          yield {
+            type: 'skill_review',
+            data: {
+              count: drafts.length,
+              skills: drafts.map((d) => ({
+                id: d.id,
+                name: d.name,
+                description: d.description,
+                status: d.status,
+              })),
+            },
+          };
+        }
+      }
+
+      // Also check if there are pending reviews the user should see
+      const pending = getPendingReviews(janusDir);
+      if (pending.length > 0) {
+        yield {
+          type: 'skill_review',
+          data: {
+            count: pending.length,
+            skills: pending.map((e) => ({
+              id: e.skill.id,
+              name: e.skill.name,
+              description: e.skill.description,
+              status: e.skill.status,
+            })),
+            message: `You have ${pending.length} skill draft(s) pending review. Use the "evolve" tool to approve or reject them.`,
+          },
+        };
+      }
+    }
   }
   yield { type: 'done', data: { reason: 'max_rounds', messages: messagesArr } };
 }
