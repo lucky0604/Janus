@@ -158,6 +158,7 @@ export function ChatInput({ onSend, onStop, isStreaming, isConnecting, placehold
             className={styles.stopButton}
             onClick={onStop}
             title="Stop generation (Esc)"
+            aria-label="停止生成"
           >
             ■
           </button>
@@ -167,6 +168,8 @@ export function ChatInput({ onSend, onStop, isStreaming, isConnecting, placehold
             onClick={handleSend}
             disabled={isDisabled}
             title="Send message (Enter)"
+            aria-label="发送消息"
+            aria-disabled={isDisabled}
           >
             ↑
           </button>
