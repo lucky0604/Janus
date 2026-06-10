@@ -1,4 +1,8 @@
-import { useRef, useState, useCallback, KeyboardEvent } from 'react';
+import { useRef, useState, useCallback, KeyboardEvent, useEffect } from 'react';
+import { useAgentStore } from '../../../stores/app-stores';
+import { useChatStore } from '../../../stores/chat-store';
+import { RoleSelector } from './RoleSelector';
+import type { OperatingModeId, AgentRoleId } from '../../../../shared/types';
 import styles from './ChatInput.module.css';
 
 interface ChatInputProps {
@@ -6,18 +10,105 @@ interface ChatInputProps {
   onStop: () => void;
   isStreaming: boolean;
   isConnecting: boolean;
+  placeholder?: string;
 }
 
-export function ChatInput({ onSend, onStop, isStreaming, isConnecting }: ChatInputProps) {
+function handleSlashCommand(input: string): { handled: boolean; message?: string } {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('/')) return { handled: false };
+
+  const parts = trimmed.split(/\s+/);
+  const command = parts[0].toLowerCase();
+  const args = parts.slice(1);
+
+  switch (command) {
+    case '/mode': {
+      const store = useAgentStore.getState();
+      if (args.length === 0) {
+        const lines = store.modes.map(m => `  ${m.id === store.activeMode ? '●' : '○'} ${m.id.padEnd(8)} — ${m.name}`);
+        return { handled: true, message: `Available modes:\n${lines.join('\n')}\n\nUsage: /mode <work|code>` };
+      }
+      const targetMode = args[0].toLowerCase() as OperatingModeId;
+      if (targetMode !== 'work' && targetMode !== 'code') {
+        return { handled: true, message: `Unknown mode: "${targetMode}". Use work or code.` };
+      }
+      store.setMode(targetMode);
+      const modeName = store.modes.find(m => m.id === targetMode)?.name || targetMode;
+      return { handled: true, message: `Switched to ${modeName}` };
+    }
+    case '/role': {
+      const store = useAgentStore.getState();
+      if (store.activeMode !== 'code') {
+        return { handled: true, message: '/role is only available in Code Mode. Use /mode code first.' };
+      }
+      if (args.length === 0) {
+        const lines = store.roles.map(r => `  ${r.id === store.activeRole ? '●' : '○'} ${r.id.padEnd(10)} — ${r.name}`);
+        return { handled: true, message: `Available roles:\n${lines.join('\n')}\n\nUsage: /role <agentic|plan|ask|debug>` };
+      }
+      const targetRole = args[0].toLowerCase() as AgentRoleId;
+      const valid = store.roles.find(r => r.id === targetRole);
+      if (!valid) {
+        return { handled: true, message: `Unknown role: "${targetRole}". Use agentic, plan, ask, or debug.` };
+      }
+      store.setRole(targetRole);
+      return { handled: true, message: `Switched to ${valid.name}` };
+    }
+    case '/clear': {
+      useChatStore.getState().resetSession();
+      return { handled: true, message: 'Session cleared' };
+    }
+    default:
+      return { handled: false };
+  }
+}
+
+export function ChatInput({ onSend, onStop, isStreaming, isConnecting, placeholder }: ChatInputProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Cmd+. — cycle through code roles (only in Code Mode)
+  useEffect(() => {
+    const handle = (e: globalThis.KeyboardEvent) => {
+      if (e.key === '.' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const store = useAgentStore.getState();
+        if (store.activeMode !== 'code') return;
+        const roles = store.roles;
+        if (roles.length === 0) return;
+        const idx = roles.findIndex((r) => r.id === store.activeRole);
+        const next = roles[(idx + 1) % roles.length];
+        store.setRole(next.id);
+      }
+    };
+    document.addEventListener('keydown', handle);
+    return () => document.removeEventListener('keydown', handle);
+  }, []);
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || isStreaming || isConnecting) return;
+
+    if (trimmed.startsWith('/')) {
+      const result = handleSlashCommand(trimmed);
+      if (result.handled) {
+        if (result.message) {
+          useChatStore.getState().addMessage({
+            id: crypto.randomUUID(),
+            role: 'system',
+            content: result.message,
+            timestamp: Date.now(),
+          });
+        }
+        setValue('');
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
+        return;
+      }
+    }
+
     onSend(trimmed);
     setValue('');
-    // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -50,13 +141,14 @@ export function ChatInput({ onSend, onStop, isStreaming, isConnecting }: ChatInp
   return (
     <div className={styles.composer}>
       <div className={styles.composerInner}>
+        <RoleSelector />
         <textarea
           ref={textareaRef}
           className={styles.textarea}
           value={value}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder="Describe the task, goal, or bug"
+          placeholder={placeholder || 'Describe the task, goal, or bug'}
           rows={1}
           disabled={isConnecting}
           autoFocus

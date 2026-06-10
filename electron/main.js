@@ -105,7 +105,7 @@ var require_package = __commonJS({
 var require_main = __commonJS({
   "node_modules/.pnpm/dotenv@16.6.1/node_modules/dotenv/lib/main.js"(exports, module) {
     var fs = __require("fs");
-    var path2 = __require("path");
+    var path3 = __require("path");
     var os = __require("os");
     var crypto = __require("crypto");
     var packageJson = require_package();
@@ -221,7 +221,7 @@ var require_main = __commonJS({
           possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
         }
       } else {
-        possibleVaultPath = path2.resolve(process.cwd(), ".env.vault");
+        possibleVaultPath = path3.resolve(process.cwd(), ".env.vault");
       }
       if (fs.existsSync(possibleVaultPath)) {
         return possibleVaultPath;
@@ -229,7 +229,7 @@ var require_main = __commonJS({
       return null;
     }
     function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path2.join(os.homedir(), envPath.slice(1)) : envPath;
+      return envPath[0] === "~" ? path3.join(os.homedir(), envPath.slice(1)) : envPath;
     }
     function _configVault(options) {
       const debug = Boolean(options && options.debug);
@@ -246,7 +246,7 @@ var require_main = __commonJS({
       return { parsed };
     }
     function configDotenv(options) {
-      const dotenvPath = path2.resolve(process.cwd(), ".env");
+      const dotenvPath = path3.resolve(process.cwd(), ".env");
       let encoding = "utf8";
       const debug = Boolean(options && options.debug);
       const quiet = options && "quiet" in options ? options.quiet : true;
@@ -270,13 +270,13 @@ var require_main = __commonJS({
       }
       let lastError;
       const parsedAll = {};
-      for (const path3 of optionPaths) {
+      for (const path4 of optionPaths) {
         try {
-          const parsed = DotenvModule.parse(fs.readFileSync(path3, { encoding }));
+          const parsed = DotenvModule.parse(fs.readFileSync(path4, { encoding }));
           DotenvModule.populate(parsedAll, parsed, options);
         } catch (e) {
           if (debug) {
-            _debug(`Failed to load ${path3} ${e.message}`);
+            _debug(`Failed to load ${path4} ${e.message}`);
           }
           lastError = e;
         }
@@ -291,7 +291,7 @@ var require_main = __commonJS({
         const shortPaths = [];
         for (const filePath of optionPaths) {
           try {
-            const relative = path2.relative(process.cwd(), filePath);
+            const relative = path3.relative(process.cwd(), filePath);
             shortPaths.push(relative);
           } catch (e) {
             if (debug) {
@@ -393,25 +393,39 @@ var require_main = __commonJS({
 
 // server/prod.js
 var prod_exports = {};
-var import_dotenv, createJanusServer, port;
+import { spawn } from "child_process";
+import { fileURLToPath } from "url";
+import path from "path";
+var import_dotenv, __dirname, prodTsPath, child;
 var init_prod = __esm({
-  async "server/prod.js"() {
+  "server/prod.js"() {
     "use strict";
     import_dotenv = __toESM(require_main(), 1);
     import_dotenv.default.config();
-    ({ createJanusServer } = await init_prod().then(() => prod_exports));
-    port = parseInt(process.env.PORT || "3000", 10);
-    await createJanusServer(void 0, port);
+    __dirname = path.dirname(fileURLToPath(import.meta.url));
+    prodTsPath = path.join(__dirname, "prod.ts");
+    child = spawn(
+      process.execPath,
+      ["--import", "tsx", prodTsPath],
+      { stdio: "inherit", env: process.env }
+    );
+    child.on("exit", (code) => {
+      process.exit(code ?? 1);
+    });
+    child.on("error", (err) => {
+      console.error("[Janus] Failed to start server via tsx:", err);
+      process.exit(1);
+    });
   }
 });
 
 // electron/main.ts
-import { app, BrowserWindow } from "electron";
-import { spawn } from "child_process";
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { spawn as spawn2 } from "child_process";
 import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
-var __dirname = path.dirname(fileURLToPath(import.meta.url));
+import path2 from "path";
+import { fileURLToPath as fileURLToPath2 } from "url";
+var __dirname2 = path2.dirname(fileURLToPath2(import.meta.url));
 var mainWindow = null;
 var serverHandle = null;
 var viteDevProc = null;
@@ -456,8 +470,8 @@ async function startServer() {
       return void 0;
     } catch {
       console.log("[Janus] Starting Vite dev server...");
-      viteDevProc = spawn("npx", ["vite"], {
-        cwd: path.resolve(__dirname, ".."),
+      viteDevProc = spawn2("npx", ["vite"], {
+        cwd: path2.resolve(__dirname2, ".."),
         stdio: "inherit",
         shell: true
       });
@@ -474,10 +488,10 @@ async function startServer() {
       return void 0;
     }
   }
-  const distDir = path.resolve(__dirname, "..", "dist");
+  const distDir = path2.resolve(__dirname2, "..", "dist");
   try {
-    const { createJanusServer: createJanusServer2 } = await init_prod().then(() => prod_exports);
-    const janusServer = await createJanusServer2(distDir);
+    const { createJanusServer } = await Promise.resolve().then(() => (init_prod(), prod_exports));
+    const janusServer = await createJanusServer(distDir);
     serverHandle = janusServer;
     return janusServer.port;
   } catch (err) {
@@ -485,7 +499,7 @@ async function startServer() {
     return void 0;
   }
 }
-function createWindow(port2) {
+function createWindow(port) {
   const isDev = !app.isPackaged;
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -496,31 +510,42 @@ function createWindow(port2) {
     titleBarStyle: "hiddenInset",
     backgroundColor: "#0a0a0a",
     webPreferences: {
-      preload: path.resolve(__dirname, "preload.js"),
+      preload: path2.resolve(__dirname2, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
-      // Needed for preload bridge
+      // Required for preload's ipcRenderer/contextBridge. Risk: if renderer XSS occurs, attacker can invoke IPC calls (select-folder etc). Remove once preload migrates to sandbox-compatible API.
     }
   });
   if (isDev) {
     mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools({ mode: "detach" });
-  } else if (port2) {
-    mainWindow.loadURL(`http://localhost:${port2}`);
+  } else if (port) {
+    mainWindow.loadURL(`http://localhost:${port}`);
   } else {
-    mainWindow.loadFile(path.resolve(__dirname, "..", "dist", "index.html"));
+    mainWindow.loadFile(path2.resolve(__dirname2, "..", "dist", "index.html"));
   }
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
+ipcMain.handle("select-folder", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory"],
+    title: "Select Workspace Folder"
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+ipcMain.on("get-version", (event) => {
+  event.returnValue = app.getVersion();
+});
 app.whenReady().then(async () => {
-  const port2 = await startServer();
-  createWindow(port2);
+  const port = await startServer();
+  createWindow(port);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow(port2);
+      createWindow(port);
     }
   });
 });

@@ -1,7 +1,8 @@
-import type { Message, StreamEvent } from '../../shared/types';
+import type { Message, StreamEvent, ToolDefinition, OperatingModeId, AgentRoleId } from '../../shared/types';
 import { executeDialogTurn } from '../engine/agent-loop';
 import { toolRegistry } from '../tools/registry';
 import { agentRegistry } from '../agents/registry';
+import { OPERATING_MODES, compositeId } from '../agents/config';
 import { saveSession, loadSession } from '../persistence/session-store';
 import dotenv from 'dotenv';
 
@@ -14,26 +15,167 @@ export interface ChatStreamRequest {
   apiKey: string;
   baseUrl?: string;
   modelName?: string;
+  /** Operating mode id (work | code). */
+  mode?: OperatingModeId;
+  /** Agent role id (agentic | plan | ask | debug). Only used when mode=code. */
+  role?: AgentRoleId;
+  /* Legacy: single agentId string — kept for backward compat. */
   agentId?: string;
+}
+
+/**
+ * Resolve the effective tools and system prompt from mode + role.
+ *
+ * Architecture:
+ *   Operating Mode → decides tool set
+ *   Agent Role     → decides system prompt (persona / methodology)
+ *   Work Mode      → no role dimension, uses work-mode.md
+ *   Code Mode      → uses code-{role}-mode.md (or code-agentic-mode.md if no role)
+ */
+export function resolveModeRole(
+  modeId: OperatingModeId | undefined,
+  roleId: AgentRoleId | undefined,
+): {
+  resolvedMode: OperatingModeId;
+  resolvedRole: AgentRoleId | undefined;
+  compositeKey: string;
+  tools: ToolDefinition[];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+
+  // Default: Work Mode (if no mode specified)
+  const resolvedMode: OperatingModeId = modeId && (modeId === 'work' || modeId === 'code')
+    ? modeId
+    : 'work';
+  const resolvedRole = resolvedMode === 'code' ? (roleId || 'agentic') : undefined;
+  const key = compositeId(resolvedMode, resolvedRole);
+
+  // Look up the tool set from the mode definition
+  const modeDef = OPERATING_MODES.find((m) => m.id === resolvedMode);
+  if (!modeDef) {
+    const msg = `[Janus] Unknown mode "${resolvedMode}", falling back to "work"`;
+    console.warn(msg);
+    warnings.push(msg);
+    const fallbackMode = OPERATING_MODES.find((m) => m.id === 'work')!;
+    const allTools = toolRegistry.getAll();
+    const tools = allTools.filter((t) => fallbackMode.tools.includes(t.name));
+    return { resolvedMode: 'work', resolvedRole: undefined, compositeKey: 'work', tools, warnings };
+  }
+
+  // Filter tools by mode's whitelist
+  const allTools = toolRegistry.getAll();
+  const validNames = new Set(allTools.map((t) => t.name));
+  const invalid = modeDef.tools.filter((n) => !validNames.has(n));
+  if (invalid.length > 0) {
+    const msg = `[Janus] Mode "${resolvedMode}" references unknown tools: ${invalid.join(', ')}`;
+    console.warn(msg);
+    warnings.push(msg);
+  }
+
+  const tools = allTools.filter((t) => modeDef.tools.includes(t.name));
+
+  return { resolvedMode, resolvedRole, compositeKey: key, tools, warnings };
+}
+
+/**
+ * Resolve agent identity and tool whitelist from the registry.
+ * Backward-compatible wrapper: accepts either mode+role or legacy agentId.
+ */
+export function resolveAgentTools(
+  agentId: string | undefined,
+  mode?: OperatingModeId,
+  role?: AgentRoleId,
+): {
+  resolvedAgentId: string;
+  tools: ToolDefinition[];
+  warnings: string[];
+} {
+  // New path: mode+role provided
+  if (mode) {
+    const resolved = resolveModeRole(mode, role);
+    const agent = agentRegistry.get(resolved.compositeKey);
+    if (!agent) {
+      const modeOnly = agentRegistry.get(mode);
+      if (modeOnly) {
+        return {
+          resolvedAgentId: mode,
+          tools: resolved.tools,
+          warnings: resolved.warnings,
+        };
+      }
+    }
+    return {
+      resolvedAgentId: resolved.compositeKey,
+      tools: resolved.tools,
+      warnings: resolved.warnings,
+    };
+  }
+
+  // Legacy path: single agentId (backward compat)
+  const warnings: string[] = [];
+  const agent = agentId ? agentRegistry.get(agentId) : agentRegistry.get('work');
+
+  if (!agent && agentId) {
+    const msg = `[Janus] Unknown agentId "${agentId}", falling back to "work"`;
+    console.warn(msg);
+    warnings.push(msg);
+  }
+  const resolvedAgent = agent || agentRegistry.get('work')!;
+  const agentTools = resolvedAgent.tools;
+  const allTools = toolRegistry.getAll();
+
+  if (agentTools && agentTools.length > 0) {
+    const validNames = new Set(allTools.map(t => t.name));
+    const invalid = agentTools.filter(n => !validNames.has(n));
+    if (invalid.length > 0) {
+      const msg = `[Janus] Agent "${resolvedAgent.id}" references unknown tools: ${invalid.join(', ')}`;
+      console.warn(msg);
+      warnings.push(msg);
+    }
+  }
+
+  const tools = agentTools && agentTools.length > 0
+    ? allTools.filter(t => agentTools.includes(t.name))
+    : allTools;
+
+  return { resolvedAgentId: resolvedAgent.id, tools, warnings };
+}
+
+/**
+ * Build a ChatStreamRequest-compatible agentId from mode+role.
+ * Frontend sends { mode, role } → server converts to composite key.
+ */
+export function makeAgentId(mode: OperatingModeId, role?: AgentRoleId): string {
+  return compositeId(mode, role);
 }
 
 export async function handleChatStream(
   req: ChatStreamRequest,
   signal: AbortSignal
 ): Promise<ReadableStream> {
-  const { messages, sessionId, workspacePath, apiKey, baseUrl, modelName, agentId } = req;
+  const { messages, sessionId, workspacePath, apiKey, baseUrl, modelName, mode, role } = req;
   const resolvedPath = workspacePath || process.env.JANUS_WORKSPACE || process.cwd();
 
-  // Agent lookup: get system prompt and tool whitelist from registry
-  const agent = agentId ? agentRegistry.get(agentId) : agentRegistry.get('work');
-  const systemPrompt = agent?.systemPrompt;
-  const agentTools = agent?.tools;
+  // Backward compat: prefer mode+role, fall back to agentId
+  let tools: ToolDefinition[];
+  let resolvedAgentId: string;
 
-  // If agent specifies tool whitelist, filter; otherwise use all tools
-  const allTools = toolRegistry.getAll();
-  const tools = agentTools
-    ? allTools.filter((t) => agentTools.includes(t.name))
-    : allTools;
+  if (mode) {
+    const resolved = resolveModeRole(mode, role);
+    tools = resolved.tools;
+    resolvedAgentId = resolved.compositeKey;
+  } else {
+    const resolved = resolveAgentTools(req.agentId);
+    tools = resolved.tools;
+    resolvedAgentId = resolved.resolvedAgentId;
+  }
+
+  const resolvedAgent = agentRegistry.get(resolvedAgentId);
+  const systemPrompt = resolvedAgent?.systemPrompt || '';
+
+  // Build the effective composite id for persistence
+  const compositeKey = mode ? compositeId(mode, role || undefined) : (req.agentId || 'work');
 
   const encoder = new TextEncoder();
 
@@ -78,7 +220,7 @@ export async function handleChatStream(
             const doneData = event.data as { reason: string; messages?: Message[] };
             if (doneData.messages) {
               try {
-                await saveSession(sessionId, doneData.messages, agentId || 'work');
+                await saveSession(sessionId, doneData.messages, compositeKey);
               } catch {
                 // Persistence failure should not break the stream
               }

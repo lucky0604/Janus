@@ -76,6 +76,7 @@
   --duration-slow: 320ms;
 
   /* ---- Layout ---- */
+  --sidebar-width: 260px;
   --chat-column-width: 720px;
   --aux-pane-width: 380px;
   --navbar-width: 48px;

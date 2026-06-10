@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { useChatStore } from './chat-store';
+import type { OperatingModeId, AgentRoleId } from '../../shared/types';
 
 type Theme = 'dark' | 'light';
 
@@ -26,76 +28,112 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   },
 }));
 
-// Initialize theme attribute on load
 document.documentElement.setAttribute('data-theme', getInitialTheme());
 
-// ---- Agent Store ----
-export interface AgentUI {
-  id: string;
+// ---- Operating Mode + Agent Role UI metadata ----
+
+export interface ModeUI {
+  id: OperatingModeId;
   name: string;
   description: string;
-  capabilities: string[];
   iconKey: string;
-  status: 'active' | 'coming_soon';
 }
 
-const DEFAULT_AGENTS: AgentUI[] = [
+export interface RoleUI {
+  id: AgentRoleId;
+  name: string;
+  description: string;
+}
+
+const DEFAULT_MODES: ModeUI[] = [
   {
     id: 'work',
     name: 'Work Mode',
-    description: 'Analyze, plan, and operate on local files',
-    capabilities: ['File operations', 'Code search', 'Shell execution', 'Git'],
-    iconKey: 'folder',
-    status: 'active',
+    description: 'Daily productivity — search, read, write files, run commands',
+    iconKey: 'briefcase',
   },
   {
     id: 'code',
-    name: 'Code',
-    description: 'AI-powered code generation and modification',
-    capabilities: ['Code generation', 'Code review', 'Refactoring', 'Testing'],
+    name: 'Code Mode',
+    description: 'AI-powered coding — read, edit, debug, and review code',
     iconKey: 'code2',
-    status: 'coming_soon',
-  },
-  {
-    id: 'plan',
-    name: 'Plan',
-    description: 'Plan before acting — clarifies requirements then executes',
-    capabilities: ['Planning', 'Analysis'],
-    iconKey: 'clipboard',
-    status: 'coming_soon',
-  },
-  {
-    id: 'debug',
-    name: 'Debug',
-    description: 'Systematic debugging — investigate and fix issues',
-    capabilities: ['Debugging', 'Root cause analysis'],
-    iconKey: 'bug',
-    status: 'coming_soon',
   },
 ];
 
+const DEFAULT_ROLES: RoleUI[] = [
+  { id: 'agentic', name: 'Agentic', description: 'Full autonomy — reads, edits, debugs, and completes tasks' },
+  { id: 'plan',    name: 'Plan',    description: 'Plan before acting — clarifies requirements then creates plans' },
+  { id: 'ask',     name: 'Ask',     description: 'Read-only research — search, read, analyze, explain' },
+  { id: 'debug',   name: 'Debug',   description: 'Systematic debugging — investigate, diagnose, and fix issues' },
+];
+
+export function compositeKey(modeId: OperatingModeId, roleId?: AgentRoleId): string {
+  return roleId ? `${modeId}/${roleId}` : modeId;
+}
+
 interface AgentState {
-  agents: AgentUI[];
-  activeAgentId: string;
-  setActiveAgent: (id: string) => void;
-  getActiveAgent: () => AgentUI | undefined;
+  modes: ModeUI[];
+  roles: RoleUI[];
+  activeMode: OperatingModeId;
+  activeRole: AgentRoleId;
+  setMode: (mode: OperatingModeId) => void;
+  setRole: (role: AgentRoleId) => void;
+  fetchAgents: () => Promise<void>;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
-  agents: DEFAULT_AGENTS,
-  activeAgentId: 'work',
+  modes: DEFAULT_MODES,
+  roles: DEFAULT_ROLES,
+  activeMode: 'work',
+  activeRole: 'agentic',
 
-  setActiveAgent: (id: string) => {
-    set({ activeAgentId: id });
+  setMode: (modeId: OperatingModeId) => {
+    const { activeRole } = get();
+    set({ activeMode: modeId });
+    const key = compositeKey(modeId, modeId === 'code' ? activeRole : undefined);
+    useChatStore.getState().switchAgent(key);
   },
 
-  getActiveAgent: () => {
-    return get().agents.find((a) => a.id === get().activeAgentId);
+  setRole: (roleId: AgentRoleId) => {
+    const { activeMode } = get();
+    set({ activeRole: roleId });
+    const key = compositeKey(activeMode, roleId);
+    useChatStore.getState().switchAgent(key);
+  },
+
+  fetchAgents: async () => {
+    try {
+      const res = await fetch('/api/agents');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.modes) {
+          set({
+            modes: data.modes.map((m: Record<string, unknown>) => ({
+              id: m.id as OperatingModeId,
+              name: m.name as string,
+              description: m.description as string,
+              iconKey: (m.iconKey as string) || 'circle',
+            })),
+          });
+        }
+        if (data.roles) {
+          set({
+            roles: data.roles.map((r: Record<string, unknown>) => ({
+              id: r.id as AgentRoleId,
+              name: r.name as string,
+              description: r.description as string,
+            })),
+          });
+        }
+      }
+    } catch {
+      // Backend unavailable — keep defaults
+    }
   },
 }));
 
 // ---- Scene Store ----
-type Scene = 'welcome' | 'chat' | 'agents' | 'settings';
+type Scene = 'welcome' | 'chat' | 'settings';
 
 interface SceneState {
   currentScene: Scene;
@@ -123,9 +161,10 @@ interface SessionState {
   sessions: SessionMetaUI[];
   currentSessionId: string | null;
   setSessions: (sessions: SessionMetaUI[]) => void;
-  setCurrentSession: (id: string) => void;
+  setCurrentSession: (id: string | null) => void;
   addSession: (session: SessionMetaUI) => void;
   removeSession: (id: string) => void;
+  refreshSessions: () => Promise<void>;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -138,4 +177,16 @@ export const useSessionStore = create<SessionState>((set) => ({
     set((s) => ({ sessions: [session, ...s.sessions] })),
   removeSession: (id) =>
     set((s) => ({ sessions: s.sessions.filter((sess) => sess.sessionId !== id) })),
+
+  refreshSessions: async () => {
+    try {
+      const res = await fetch('/api/sessions');
+      if (res.ok) {
+        const data = await res.json();
+        set({ sessions: data.sessions || [] });
+      }
+    } catch {
+      // ignore
+    }
+  },
 }));

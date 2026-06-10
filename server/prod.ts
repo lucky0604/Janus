@@ -6,7 +6,9 @@ import { fileURLToPath } from 'url';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { Message } from '../shared/types';
 import { handleChatStream, handleGetMessages } from './routes/chat';
+import { listSessions, loadSession, deleteSession } from './persistence/session-store';
 import { agentRegistry } from './agents/registry';
+import { OPERATING_MODES, AGENT_ROLES, promptFileKey, compositeId, compositeName } from './agents/config';
 import Database from 'better-sqlite3';
 
 // Register all tools (side-effect imports)
@@ -20,35 +22,173 @@ import './tools/web-search';
 import './tools/web-fetch';
 import './tools/evolve';
 
-// Register Work Mode agent
+// Register agents from modes + roles
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const workModePromptPath = path.resolve(__dirname, 'agents/prompts/work-mode.md');
-let workModePrompt = '';
-try {
-  workModePrompt = fs.readFileSync(workModePromptPath, 'utf-8').trim();
-} catch {
-  // Will fall back to DEFAULT_SYSTEM_PROMPT in agent-loop
+function registerAgent(
+  id: string,
+  name: string,
+  description: string,
+  promptFileName: string,
+  tools: string[],
+  capCategories: string[],
+  iconKey: string,
+): void {
+  if (agentRegistry.get(id)) return; // skip duplicates
+  const promptPath = path.resolve(__dirname, 'agents/prompts', `${promptFileName}.md`);
+  let systemPrompt = '';
+  try {
+    systemPrompt = fs.readFileSync(promptPath, 'utf-8').trim();
+  } catch {
+    console.warn(`[Janus] Prompt file not found: ${promptPath}`);
+  }
+  agentRegistry.register({
+    id,
+    name,
+    description,
+    systemPrompt,
+    tools,
+    capabilities: capCategories.map((c) => ({ category: c as any, level: 4 })),
+    iconKey,
+    status: 'active',
+  });
 }
 
-agentRegistry.register({
-  id: 'work',
-  name: 'Work Mode',
-  description: 'Daily productivity assistant — search the web, read pages, manage files, run shell commands',
-  systemPrompt: workModePrompt,
-  tools: [
-    'web_search', 'web_fetch',
-    'read_file', 'write_file', 'list_dir_tree', 'search_content',
-    'shell_exec', 'git_ops',
-  ],
-  capabilities: [
-    { category: 'docs', level: 4 },
-    { category: 'analysis', level: 3 },
-    { category: 'file_ops', level: 5 },
-    { category: 'ops', level: 3 },
-  ],
-  iconKey: 'briefcase',
-  status: 'active',
-});
+// Register Work Mode (mode-only, no role)
+for (const mode of OPERATING_MODES) {
+  if (mode.id === 'work') {
+    registerAgent(
+      'work',
+      mode.name,
+      mode.description,
+      promptFileKey('work'),              // work-mode
+      mode.tools,
+      mode.capabilities.map((c) => c.category),
+      mode.iconKey,
+    );
+  }
+}
+
+// Register Code Mode roles as composite agents
+for (const mode of OPERATING_MODES) {
+  if (mode.id !== 'code') continue;
+  for (const role of AGENT_ROLES) {
+    registerAgent(
+      compositeId(mode.id, role.id),       // code/agentic, code/plan, etc.
+      compositeName(mode.name, role.name), // "Code — Agentic"
+      role.description,
+      promptFileKey(mode.id, role.id),     // code-agentic-mode
+      mode.tools,
+      mode.capabilities.map((c) => c.category),
+      mode.iconKey,
+    );
+  }
+}
+
+/**
+ * Handle GET /api/agents — return modes + roles for the frontend.
+ */
+function handleAgentsList(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const modes = OPERATING_MODES.map((m) => ({
+    id: m.id,
+    name: m.name,
+    description: m.description,
+    capabilities: m.capabilities.map((c) => c.category),
+    iconKey: m.iconKey,
+  }));
+  const roles = AGENT_ROLES.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+  }));
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ modes, roles }));
+  return Promise.resolve();
+}
+
+/**
+ * Handle GET /api/sessions — return session list.
+ */
+async function handleSessionsList(_req: IncomingMessage, res: ServerResponse): Promise<void> {
+  try {
+    const sessions = await listSessions();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ sessions }));
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to list sessions' }));
+  }
+}
+
+/**
+ * Handle POST /api/sessions/:id/load — load session messages.
+ */
+async function handleSessionLoad(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const sessionId = extractPathSegment(req.url || '', '/sessions/', '/load');
+  if (!sessionId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing sessionId' }));
+    return;
+  }
+  try {
+    const session = await loadSession(sessionId);
+    if (!session) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Session not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ messages: session.messages, metadata: session.metadata }));
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to load session' }));
+  }
+}
+
+/**
+ * Handle DELETE /api/sessions/:id — delete session.
+ */
+async function handleSessionDelete(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const sessionId = extractPathSegment(req.url || '', '/sessions/', '');
+  if (!sessionId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing sessionId' }));
+    return;
+  }
+  try {
+    await deleteSession(sessionId);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to delete session' }));
+  }
+}
+
+/**
+ * UUID v4 regex: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+ */
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Extract a path segment between a prefix and optional suffix, then validate it's a UUID.
+ * e.g. extractPathSegment('/sessions/abc123-.../load', '/sessions/', '/load') → 'abc123-...'
+ * Returns empty string if segment is missing, too long, or not a valid UUID (prevents path traversal).
+ */
+function extractPathSegment(url: string, prefix: string, suffix: string): string {
+  const start = url.indexOf(prefix);
+  if (start < 0) return '';
+  let segment = url.slice(start + prefix.length);
+  if (suffix) {
+    const end = segment.indexOf(suffix);
+    if (end >= 0) segment = segment.slice(0, end);
+  }
+  // Remove any trailing query string
+  const qs = segment.indexOf('?');
+  if (qs >= 0) segment = segment.slice(0, qs);
+  // Validate: must be a UUID-like string (prevents path traversal via `../../etc/passwd`)
+  if (!segment || segment.length > 64 || !UUID_V4_RE.test(segment)) return '';
+  return segment;
+}
 
 // ---- Shared API route handler (used by both prod server and Vite dev) ----
 
@@ -85,6 +225,23 @@ function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<vo
     return handleMemoryStatus(req, res);
   }
 
+  if (req.method === 'GET' && pathname === '/agents') {
+    return handleAgentsList(req, res);
+  }
+
+  // Session management
+  if (req.method === 'GET' && pathname === '/sessions') {
+    return handleSessionsList(req, res);
+  }
+
+  if (req.method === 'POST' && pathname.startsWith('/sessions/') && pathname.endsWith('/load')) {
+    return handleSessionLoad(req, res);
+  }
+
+  if (req.method === 'DELETE' && pathname.startsWith('/sessions/')) {
+    return handleSessionDelete(req, res);
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
   return Promise.resolve();
@@ -118,10 +275,8 @@ function handleMemoryStatus(_req: IncomingMessage, res: ServerResponse): Promise
           'SELECT rowid as id, content, category, source FROM memory_index ORDER BY rowid DESC LIMIT 10'
         ).all() as Array<{ id: number; content: string; category: string; source: string }>);
       } catch (err) {
-        // DB might be locked or corrupt — log for diagnosis
         console.error('[Janus memory] memory/status DB read failed:', err instanceof Error ? err.message : err);
       } finally {
-        // Always close the DB handle to prevent resource leaks
         db?.close();
       }
     }
@@ -168,7 +323,10 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
   const sessionId = (body.sessionId as string) || crypto.randomUUID();
   const baseUrl = (typeof body.baseUrl === 'string' && body.baseUrl.trim()) || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
   const modelName = (typeof body.modelName === 'string' && body.modelName.trim()) || process.env.OPENAI_MODEL || 'gpt-4o';
-  const agentId = (body.agentId as string) || 'work';
+  // New: accept mode+role from frontend, fall back to legacy agentId
+  const mode = body.mode as string | undefined;
+  const role = body.role as string | undefined;
+  const agentId = (body.agentId as string) || undefined;
 
   const abortController = new AbortController();
   req.on('close', () => abortController.abort());
@@ -182,7 +340,13 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
 
   try {
     const stream = await handleChatStream(
-      { messages: messages as Message[], workspacePath, sessionId, apiKey, baseUrl, modelName, agentId },
+      {
+        messages: messages as Message[],
+        workspacePath, sessionId, apiKey, baseUrl, modelName,
+        mode: mode as any,
+        role: role as any,
+        agentId,
+      },
       abortController.signal
     );
 
@@ -255,7 +419,6 @@ export function createJanusServer(distDir?: string, port?: number): Promise<Janu
 
     // API routes take priority
     if (url.pathname.startsWith('/api/')) {
-      // Strip /api prefix for the handler
       req.url = url.pathname.slice('/api'.length) + url.search;
       handleApiRequest(req, res).catch(() => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -293,7 +456,6 @@ export function createJanusServer(distDir?: string, port?: number): Promise<Janu
   return new Promise((resolve, reject) => {
     server.on('error', reject);
 
-    // port=0 lets OS assign a random free port (good for Electron)
     server.listen(port || 0, () => {
       const addr = server.address();
       const actualPort = typeof addr === 'object' && addr ? addr.port : (port || 3000);
@@ -308,7 +470,7 @@ export function createJanusServer(distDir?: string, port?: number): Promise<Janu
   });
 }
 
-// ---- Vite dev server integration (replaces old configureApiRoutes) ----
+// ---- Vite dev server integration ----
 
 export function configureApiRoutes(viteServer: { middlewares: { use: (path: string, handler: (req: IncomingMessage, res: ServerResponse) => void) => void } }) {
   viteServer.middlewares.use('/api', (req: IncomingMessage, res: ServerResponse) => {
@@ -320,8 +482,6 @@ export function configureApiRoutes(viteServer: { middlewares: { use: (path: stri
 }
 
 // ---- Direct execution entrypoint ----
-// When this file is run directly (e.g. via `tsx server/prod.ts`), boot a standalone server.
-// Detect via comparing the resolved module URL with process.argv[1].
 const isDirectRun = (() => {
   try {
     const thisModulePath = fileURLToPath(import.meta.url);

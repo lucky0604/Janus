@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Message, ToolMeta, StreamEvent, SSEToolCall, SSEToolResult, SSEMemoryRecall, SSESkillReview, SSEEvolutionEvent } from '../../shared/types';
+import { useAgentStore, useSessionStore } from './app-stores';
 
 interface ChatState {
   messages: Message[];
@@ -22,6 +23,8 @@ interface ChatState {
   setWorkspacePath: (path: string) => void;
   clearError: () => void;
   addMessage: (msg: Message) => void;
+  switchAgent: (agentId: string) => void;
+  resetSession: () => void;
 }
 
 let abortController: AbortController | null = null;
@@ -30,9 +33,6 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
-/**
- * Build a short human-readable summary of a tool call's arguments.
- */
 function summarizeToolArgs(name: string, args: Record<string, unknown>): string {
   switch (name) {
     case 'web_search':
@@ -58,10 +58,6 @@ function summarizeToolArgs(name: string, args: Record<string, unknown>): string 
   }
 }
 
-/**
- * Build a ToolMeta from a tool_result event, parsing the output for
- * structured information like source URLs.
- */
 function buildResultMeta(name: string, output: string, success: boolean): Partial<ToolMeta> {
   const meta: Partial<ToolMeta> = {
     status: success ? 'done' : 'error',
@@ -71,7 +67,6 @@ function buildResultMeta(name: string, output: string, success: boolean): Partia
     meta.resultSummary = summarizeResult(name, output);
   }
 
-  // Extract sources for web_search results
   if (name === 'web_search' && success) {
     try {
       const parsed = JSON.parse(output);
@@ -85,7 +80,6 @@ function buildResultMeta(name: string, output: string, success: boolean): Partia
     } catch { /* not JSON */ }
   }
 
-  // Extract URL for web_fetch results
   if (name === 'web_fetch' && success) {
     try {
       const parsed = JSON.parse(output);
@@ -124,6 +118,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendMessage: async (content: string) => {
     const { apiKey, baseUrl, modelName, workspacePath, sessionId, messages } = get();
+    const { activeMode, activeRole } = useAgentStore.getState();
     if (!apiKey) {
       set({ errorMessage: 'API key required' });
       return;
@@ -144,12 +139,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       errorMessage: null,
     });
 
-    // Build the messages array that includes the user's current input
     const requestMessages = [...messages, userMsg];
 
     abortController = new AbortController();
 
-    // Track pending tool calls so we can match results
     const pendingToolCalls = new Map<string, { name: string; args: Record<string, unknown> }>();
 
     try {
@@ -165,6 +158,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           sessionId,
           baseUrl: baseUrl.trim(),
           modelName: modelName.trim(),
+          agentId: activeMode === 'code' ? `${activeMode}/${activeRole}` : activeMode,
+          mode: activeMode,
+          role: activeMode === 'code' ? activeRole : undefined,
         }),
         signal: abortController.signal,
       });
@@ -195,9 +191,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE: events are separated by blank lines (\n\n)
         const eventBlocks = buffer.split(/\n\n/);
-        // Last block may be incomplete — keep in buffer
         buffer = eventBlocks.pop() || '';
 
         for (const block of eventBlocks) {
@@ -223,12 +217,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const msgs = [...get().messages];
                 const last = msgs[msgs.length - 1];
                 if (last && last.role === 'assistant') {
-                  // Append to existing assistant message (same round)
                   last.content += delta;
                   set({ messages: [...msgs] });
                 } else {
-                  // New round after tool calls: create a fresh assistant message.
-                  // The previous round's accumulated content belongs to that round's message.
                   const newAssistant: Message = {
                     id: generateId(),
                     role: 'assistant',
@@ -246,7 +237,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const argSummary = summarizeToolArgs(tc.name, args);
                 pendingToolCalls.set(tc.id, { name: tc.name, args });
 
-                // Insert a tool message showing "running" state
                 const toolMsg: Message = {
                   id: generateId(),
                   role: 'tool',
@@ -269,7 +259,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
                 const resultMeta = buildResultMeta(toolName, tr.output, tr.success);
 
-                // Update the matching tool message with result data
                 const msgs = [...get().messages];
                 const toolMsg = msgs.find(m => m.role === 'tool' && m.toolCallId === tr.id);
                 if (toolMsg) {
@@ -281,7 +270,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   } as ToolMeta;
                   set({ messages: [...msgs] });
                 } else {
-                  // No matching tool_call seen — insert a completed tool message
                   const newToolMsg: Message = {
                     id: generateId(),
                     role: 'tool',
@@ -358,7 +346,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             }
           } catch {
-            // Skip malformed events — don't crash the stream
+            // Skip malformed events
           }
         }
       }
@@ -419,5 +407,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   addMessage: (msg: Message) => {
     set({ messages: [...get().messages, msg] });
+  },
+
+  /** Switch agent/mode without clearing conversation history. */
+  switchAgent: (_agentId: string) => {
+    abortController?.abort();
+    abortController = null;
+    set({
+      sessionId: crypto.randomUUID(),
+      isStreaming: false,
+      isConnecting: false,
+      connectionError: false,
+      errorMessage: null,
+    });
+  },
+
+  /** Clear all messages and start fresh. Used by /clear command. */
+  resetSession: () => {
+    abortController?.abort();
+    abortController = null;
+    set({
+      sessionId: crypto.randomUUID(),
+      messages: [],
+      isStreaming: false,
+      isConnecting: false,
+      connectionError: false,
+      errorMessage: null,
+    });
+    // Refresh session list after clearing
+    useSessionStore.getState().refreshSessions();
   },
 }));

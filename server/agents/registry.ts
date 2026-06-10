@@ -18,6 +18,11 @@ class AgentRegistry {
     return Array.from(this.agents.values());
   }
 
+  /** Return only agents with status 'active'. */
+  listActive(): AgentDefinition[] {
+    return this.list().filter((a) => a.status === 'active' || a.status === undefined);
+  }
+
   getToolNames(agentId: string): string[] {
     const agent = this.agents.get(agentId);
     return agent ? agent.tools : [];

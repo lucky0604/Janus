@@ -106,6 +106,30 @@ export interface AgentDefinition {
   status?: 'active' | 'coming_soon';
 }
 
+// ---- Operating Mode + Agent Role (two-dimensional architecture) ----
+
+export type OperatingModeId = 'work' | 'code';
+export type AgentRoleId = 'agentic' | 'plan' | 'ask' | 'debug';
+
+export interface ModeCapability {
+  category: string;
+}
+
+export interface ModeDefinition {
+  id: OperatingModeId;
+  name: string;
+  description: string;
+  tools: string[];
+  capabilities: ModeCapability[];
+  iconKey: string;
+}
+
+export interface RoleDefinition {
+  id: AgentRoleId;
+  name: string;
+  description: string;
+}
+
 // ---- Session ----
 export interface SessionMeta {
   sessionId: string;
