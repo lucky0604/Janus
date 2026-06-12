@@ -1,7 +1,60 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useCodeModeStore } from '../../../stores/app-stores';
 import type { CliDetectionResult, CliToolId } from '../../../../shared/types';
 import styles from './ComposerConsole.module.css';
+
+function useIsNarrow(breakpoint = 768): boolean {
+  const [narrow, setNarrow] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const handler = (e: MediaQueryListEvent) => setNarrow(e.matches);
+    setNarrow(mq.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [breakpoint]);
+  return narrow;
+}
+
+interface PickerSheetProps {
+  title: string;
+  options: Array<{ id: string; label: string; disabled?: boolean; active?: boolean }>;
+  onSelect: (id: string) => void;
+  onClose: () => void;
+}
+
+function PickerSheet({ title, options, onSelect, onClose }: PickerSheetProps) {
+  return (
+    <div className={styles.sheetOverlay} onClick={onClose}>
+      <div className={styles.sheetPanel} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.sheetHeader}>
+          <span className={styles.sheetTitle}>{title}</span>
+          <button className={styles.sheetCloseBtn} onClick={onClose}>×</button>
+        </div>
+        {options.map((opt) => (
+          <button
+            key={opt.id}
+            className={
+              opt.disabled
+                ? styles.sheetOptionDisabled
+                : opt.active
+                  ? styles.sheetOptionActive
+                  : styles.sheetOption
+            }
+            onClick={() => !opt.disabled && onSelect(opt.id)}
+            disabled={opt.disabled}
+          >
+            <span>{opt.label}</span>
+            <span className={styles.sheetOptionStatus}>
+              {opt.disabled ? '✗' : opt.active ? '●' : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface Props {
   onStreamEvent?: (event: { type: string; data: unknown }) => void;
@@ -14,7 +67,9 @@ export function ComposerConsole({ onStreamEvent, onSend, workspacePath }: Props)
   const [cliResults, setCliResults] = useState<CliDetectionResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
+  const [sheetType, setSheetType] = useState<'cli' | 'model' | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const isNarrow = useIsNarrow();
 
   useEffect(() => {
     setLoading(true);
@@ -103,6 +158,18 @@ export function ComposerConsole({ onStreamEvent, onSend, workspacePath }: Props)
   const models = currentCli?.models ?? [];
   const displayPath = workspacePath || (typeof window !== 'undefined' ? window.location.origin : '');
 
+  const handleCliSheetSelect = useCallback((id: string) => {
+    setActiveCli(id as CliToolId);
+    const cli = cliResults.find((c) => c.id === id);
+    setActiveModel(cli?.models?.[0] ?? '');
+    setSheetType(null);
+  }, [cliResults, setActiveCli, setActiveModel]);
+
+  const handleModelSheetSelect = useCallback((id: string) => {
+    setActiveModel(id);
+    setSheetType(null);
+  }, [setActiveModel]);
+
   return (
     <div className={styles.composerContainer}>
       <div className={styles.pathIndicator}>
@@ -117,6 +184,7 @@ export function ComposerConsole({ onStreamEvent, onSend, workspacePath }: Props)
             value={activeCli}
             onChange={handleCliChange}
             disabled={loading || isExecuting}
+            onClick={isNarrow ? (e) => { e.preventDefault(); setSheetType('cli'); } : undefined}
           >
             {loading ? (
               <option>Detecting...</option>
@@ -135,17 +203,21 @@ export function ComposerConsole({ onStreamEvent, onSend, workspacePath }: Props)
           <div className={styles.selectLabel}>Model</div>
           <input
             className={styles.select}
-            list={`models-${activeCli}`}
+            list={isNarrow ? undefined : `models-${activeCli}`}
             value={activeModel}
             onChange={(e) => setActiveModel(e.target.value)}
             disabled={isExecuting}
             placeholder="Select or type model..."
+            onClick={isNarrow ? () => setSheetType('model') : undefined}
+            readOnly={isNarrow}
           />
-          <datalist id={`models-${activeCli}`}>
-            {models.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
+          {!isNarrow && (
+            <datalist id={`models-${activeCli}`}>
+              {models.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          )}
         </div>
       </div>
 
@@ -183,6 +255,33 @@ export function ComposerConsole({ onStreamEvent, onSend, workspacePath }: Props)
           </button>
         )}
       </div>
+
+      {sheetType === 'cli' && (
+        <PickerSheet
+          title="Select Agent CLI"
+          options={cliResults.map((cli) => ({
+            id: cli.id,
+            label: `${cli.displayName} ${cli.available ? '✓' : '✗'}`,
+            disabled: !cli.available,
+            active: cli.id === activeCli,
+          }))}
+          onSelect={handleCliSheetSelect}
+          onClose={() => setSheetType(null)}
+        />
+      )}
+
+      {sheetType === 'model' && (
+        <PickerSheet
+          title="Select Model"
+          options={models.map((m) => ({
+            id: m,
+            label: m,
+            active: m === activeModel,
+          }))}
+          onSelect={handleModelSheetSelect}
+          onClose={() => setSheetType(null)}
+        />
+      )}
     </div>
   );
 }

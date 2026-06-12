@@ -13,6 +13,7 @@ import Database from 'better-sqlite3';
 
 import { handleCodeModeRoutes } from './code-mode/handoff-routes';
 import { handleStreamRoutes } from './code-mode/stream-routes';
+import { handleOnboardingRoutes } from './code-mode/onboarding-routes';
 
 // Register all tools (side-effect imports)
 import './tools/read-file';
@@ -246,14 +247,15 @@ function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<vo
   }
 
   // Code Mode relay routes — workspace resolved from query param or env
-  if (pathname.startsWith('/code-mode/')) {
+  if (pathname.startsWith('/code-mode/') || pathname.startsWith('/onboarding/')) {
     const codeModeWorkspace = url.searchParams.get('workspace')
       || process.env.JANUS_WORKSPACE
       || process.cwd();
     const fullPath = '/api' + pathname;
     const handled =
       handleCodeModeRoutes(req, res, fullPath, codeModeWorkspace) ||
-      handleStreamRoutes(req, res, fullPath, codeModeWorkspace);
+      handleStreamRoutes(req, res, fullPath, codeModeWorkspace) ||
+      handleOnboardingRoutes(req, res, fullPath, codeModeWorkspace);
     if (handled) return Promise.resolve();
   }
 
