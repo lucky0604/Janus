@@ -37,6 +37,17 @@ export function OnboardingDashboard({ onStartSession }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  function isValidOnboardingStatus(data: unknown): data is OnboardingStatus {
+    if (typeof data !== 'object' || data === null) return false;
+    const d = data as Record<string, unknown>;
+    return (
+      typeof d.workspace === 'object' && d.workspace !== null &&
+      typeof d.clis === 'object' && Array.isArray(d.clis) &&
+      typeof d.environment === 'object' && d.environment !== null &&
+      typeof d.sessions === 'object' && d.sessions !== null
+    );
+  }
+
   const fetchStatus = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -44,6 +55,9 @@ export function OnboardingDashboard({ onStartSession }: Props) {
       const res = await fetch('/api/onboarding/status');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (!isValidOnboardingStatus(data)) {
+        throw new Error('Invalid response format from server');
+      }
       setStatus(data);
     } catch (err) {
       setError(String(err));
