@@ -25,13 +25,16 @@
 
 ---
 
-## 3. ✅ Onboarding 首次加载环境健康度看板
+## 3. ✅ Onboarding 首次加载环境健康度看板 [已完成]
 
 > **实现于:** `server/code-mode/onboarding-routes.ts` + `src/app/scenes/code-mode/OnboardingDashboard.tsx` + `CodeModeScene.tsx`
 >
 > - 后端 `/api/onboarding/status` 端点：检测 workspace Git 状态、CLI 可用性与版本、API Key 配置
 > - 前端 `OnboardingDashboard` 组件：展示工作区路径/分支、CLI 网格卡片、环境变量状态、CTA 按钮
 > - `CodeModeScene` 在无会话时自动展示 Onboarding Dashboard
+> - API 响应运行时校验防止畸形 JSON 崩溃
+>
+> **Completed:** v0.2.4.0 (2026-06-12)
 
 ---
 
