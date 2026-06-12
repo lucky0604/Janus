@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.4.0] - 2026-06-12
+
+### Added
+- Code Mode Onboarding Dashboard showing workspace Git status, CLI availability, and API key configuration
+- Runtime validation for API responses to prevent crashes from malformed JSON
+- Narrow-screen responsive picker sheets for CLI and model selection (<768px)
+- Focus trap with keyboard shortcuts (Y/N/Escape) for approval cards
+
+### Changed
+- Removed empty state placeholder when no session exists — replaced by OnboardingDashboard
+- Enhanced ComposerConsole with bottom-sheet picker pattern for mobile devices
+
+---
+
 ## [0.2.3.0] - 2026-06-10
 
 ### Added

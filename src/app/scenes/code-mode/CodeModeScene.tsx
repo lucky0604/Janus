@@ -6,6 +6,7 @@ import { CodeModeLayout } from './CodeModeLayout';
 import { ComposerConsole } from './ComposerConsole';
 import { InspectorPane, type ToolCardData } from './InspectorPane';
 import { PtyDrawer } from './PtyDrawer';
+import { OnboardingDashboard } from './OnboardingDashboard';
 import { useCodeModeStore } from '../../../stores/app-stores';
 import msgStyles from '../chat/MessageList.module.css';
 
@@ -18,6 +19,7 @@ interface ChatMsg {
 export function CodeModeScene() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [tools, setTools] = useState<ToolCardData[]>([]);
+  const [sessionStarted, setSessionStarted] = useState(false);
   const { isExecuting } = useCodeModeStore();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -66,7 +68,28 @@ export function CodeModeScene() {
     }
   }, []);
 
-  const emptyState = messages.length === 0;
+  const emptyState = messages.length === 0 && !sessionStarted;
+  const showOnboarding = emptyState;
+
+  const handleStartSession = useCallback(() => {
+    setSessionStarted(true);
+  }, []);
+
+  if (showOnboarding) {
+    return (
+      <CodeModeLayout
+        chat={
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ flex: 1, overflow: 'auto' }}>
+              <OnboardingDashboard onStartSession={handleStartSession} />
+            </div>
+            <ComposerConsole onStreamEvent={handleStreamEvent} onSend={handleUserSend} />
+          </div>
+        }
+        inspector={<InspectorPane tools={tools} />}
+      />
+    );
+  }
 
   return (
     <CodeModeLayout
@@ -74,17 +97,8 @@ export function CodeModeScene() {
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
             <div style={{ maxWidth: '720px', margin: '0 auto' }}>
-              {emptyState ? (
-                <div style={{
-                  padding: '48px 0',
-                  textAlign: 'center',
-                  color: 'var(--color-text-tertiary)',
-                }}>
-                  Select an agent CLI and start a relay session
-                </div>
-              ) : (
-                <div className={msgStyles.messageList}>
-                  {messages.map((msg, i) => (
+              <div className={msgStyles.messageList}>
+                {messages.map((msg, i) => (
                     <div key={msg.id} className={`${msgStyles.message} ${msg.role === 'user' ? msgStyles.userMessage : msgStyles.assistantMessage}`}>
                       {msg.role === 'user' ? (
                         <div className={msgStyles.messageHeader}>
@@ -120,8 +134,7 @@ export function CodeModeScene() {
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
+              </div>
             </div>
           </div>
           <PtyDrawer />

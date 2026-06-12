@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useFocusTrap } from './useFocusTrap';
 import styles from './InspectorPane.module.css';
 
 export interface ToolCardData {
@@ -74,9 +75,16 @@ function ToolCard({ card }: { card: ToolCardData }) {
 
 function ApprovalCard({ card }: { card: ApprovalCardData }) {
   const isLocked = card.status === 'locked_timeout';
+  const isPending = card.status === 'pending';
+
+  const trapRef = useFocusTrap(isPending, {
+    onApprove: card.onApprove,
+    onDeny: card.onDeny,
+    onEscape: card.onDeny,
+  });
 
   return (
-    <div className={`${styles.approvalCard} ${isLocked ? styles.approvalLocked : ''}`}>
+    <div ref={trapRef} className={`${styles.approvalCard} ${isLocked ? styles.approvalLocked : ''} ${isPending ? styles.approvalFocused : ''}`}>
       <div className={styles.approvalHeader}>
         <span>⚡</span>
         <span>{card.title}</span>
@@ -85,12 +93,12 @@ function ApprovalCard({ card }: { card: ApprovalCardData }) {
         <div style={{ fontSize: '12px', marginBottom: '8px' }}>{card.description}</div>
         {card.diff && <DiffView diff={card.diff} />}
       </div>
-      {card.status === 'pending' && (
+      {isPending && (
         <div className={styles.approvalActions}>
-          <button className={styles.approveBtn} onClick={card.onApprove}>
+          <button className={styles.approveBtn} onClick={card.onApprove} tabIndex={0}>
             Approve (Y)
           </button>
-          <button className={styles.denyBtn} onClick={card.onDeny}>
+          <button className={styles.denyBtn} onClick={card.onDeny} tabIndex={0}>
             Deny (N)
           </button>
         </div>
