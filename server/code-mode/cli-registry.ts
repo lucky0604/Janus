@@ -1,7 +1,15 @@
 import { execSync } from 'child_process';
 import type { CliToolConfig, CliToolId, CliDetectionResult } from '../../shared/types';
+import {
+  parseClaudeCodeSettings,
+  parseCodexModelCatalog,
+  parseOpenCodeModelsOutput,
+  readClaudeCodeSettingsFile,
+  readCodexDefaultModel,
+  reorderModelList,
+} from './model-detectors';
 
-const modelCache = new Map<CliToolId, { models: string[]; ts: number }>();
+const modelCache = new Map<CliToolId, { models: string[]; defaultModel?: string; ts: number }>();
 const MODEL_CACHE_TTL = 5 * 60 * 1000;
 
 const CLI_CONFIGS: CliToolConfig[] = [
@@ -9,7 +17,7 @@ const CLI_CONFIGS: CliToolConfig[] = [
     id: 'claudecode',
     binaryName: 'claude',
     displayName: 'Claude Code',
-    defaultModels: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514'],
+    defaultModels: ['sonnet', 'opus', 'haiku'],
     capabilities: {
       streamJson: true,
       ptyRequired: false,
@@ -21,7 +29,7 @@ const CLI_CONFIGS: CliToolConfig[] = [
     binaryName: 'codex',
     displayName: 'Codex',
     subCommand: 'exec',
-    defaultModels: ['o4-mini', 'o3', 'gpt-4.1'],
+    defaultModels: ['gpt-5.4', 'gpt-5.5', 'gpt-5.3-codex'],
     capabilities: {
       streamJson: true,
       ptyRequired: false,
@@ -33,7 +41,7 @@ const CLI_CONFIGS: CliToolConfig[] = [
     binaryName: 'opencode',
     displayName: 'OpenCode',
     subCommand: 'run',
-    defaultModels: ['claude-sonnet-4-20250514', 'gpt-4.1', 'gemini-2.5-pro'],
+    defaultModels: [],
     capabilities: {
       streamJson: true,
       ptyRequired: false,
@@ -56,28 +64,75 @@ function whichBinary(name: string): string | null {
   }
 }
 
-function detectModelsForCli(id: CliToolId, binaryName: string): string[] {
-  const cached = modelCache.get(id);
-  if (cached && Date.now() - cached.ts < MODEL_CACHE_TTL) return cached.models;
+function execCliOutput(command: string, timeoutMs: number): string {
+  return execSync(command, {
+    encoding: 'utf-8',
+    timeout: timeoutMs,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      NO_COLOR: '1',
+      FORCE_COLOR: '0',
+      TERM: process.env.TERM && process.env.TERM !== 'dumb' ? process.env.TERM : 'xterm-256color',
+    },
+  }).trim();
+}
 
-  let models: string[] = [];
+interface ModelDetection {
+  models: string[];
+  defaultModel?: string;
+}
+
+function detectOpenCodeModels(binaryName: string): ModelDetection {
+  const out = execCliOutput(`${binaryName} models --pure`, 8000);
+  const models = parseOpenCodeModelsOutput(out);
+  return { models, defaultModel: models[0] };
+}
+
+function detectCodexModels(binaryName: string): ModelDetection {
+  const out = execCliOutput(`${binaryName} debug models`, 12000);
+  const models = parseCodexModelCatalog(JSON.parse(out));
+  const configuredDefault = readCodexDefaultModel();
+  const ordered = reorderModelList(models, configuredDefault);
+  return {
+    models: ordered,
+    defaultModel: configuredDefault ?? ordered[0],
+  };
+}
+
+function detectClaudeCodeModels(): ModelDetection {
+  const settings = readClaudeCodeSettingsFile();
+  const parsed = parseClaudeCodeSettings(settings);
+  return parsed;
+}
+
+function detectModelsForCli(id: CliToolId, binaryName: string): ModelDetection {
+  const cached = modelCache.get(id);
+  if (cached && Date.now() - cached.ts < MODEL_CACHE_TTL) {
+    return { models: cached.models, defaultModel: cached.defaultModel };
+  }
+
+  let detection: ModelDetection = { models: [] };
   try {
-    if (id === 'opencode') {
-      const out = execSync(`${binaryName} models --pure`, {
-        encoding: 'utf-8',
-        timeout: 8000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-      models = out.split('\n').map((l) => l.trim()).filter(Boolean);
+    switch (id) {
+      case 'opencode':
+        detection = detectOpenCodeModels(binaryName);
+        break;
+      case 'codex':
+        detection = detectCodexModels(binaryName);
+        break;
+      case 'claudecode':
+        detection = detectClaudeCodeModels();
+        break;
     }
   } catch {
-    // detection failed, fall through to defaults
+    // fall through to defaults
   }
 
-  if (models.length > 0) {
-    modelCache.set(id, { models, ts: Date.now() });
+  if (detection.models.length > 0) {
+    modelCache.set(id, { ...detection, ts: Date.now() });
   }
-  return models;
+  return detection;
 }
 
 export function detectCli(id: CliToolId): CliDetectionResult {
@@ -89,9 +144,14 @@ export function detectCli(id: CliToolId): CliDetectionResult {
   const available = binaryPath !== null;
 
   let models = config.defaultModels;
+  let defaultModel = config.defaultModels[0];
+
   if (available) {
     const detected = detectModelsForCli(id, config.binaryName);
-    if (detected.length > 0) models = detected;
+    if (detected.models.length > 0) {
+      models = detected.models;
+      defaultModel = detected.defaultModel ?? detected.models[0];
+    }
   }
 
   return {
@@ -100,6 +160,7 @@ export function detectCli(id: CliToolId): CliDetectionResult {
     available,
     binaryPath,
     models,
+    defaultModel,
   };
 }
 
