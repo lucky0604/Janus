@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { toolRegistry } from './registry';
-import { validatePath } from './path-validator';
+import { resolveToolPath } from './path-validator';
 
 // ---- list_dir ----
 toolRegistry.register({
@@ -19,7 +19,7 @@ toolRegistry.register({
   },
   execute: async (args, context) => {
     try {
-      const resolvedPath = validatePath(args.path as string, context.workspacePath);
+      const resolvedPath = resolveToolPath(args.path as string, context.workspacePath);
 
       if (!fs.existsSync(resolvedPath)) {
         return { success: false, error: `Directory not found: ${args.path}` };
@@ -45,7 +45,7 @@ toolRegistry.register({
       return { success: true, data: { entries: result } };
     } catch (err) {
       if (err instanceof Error && err.name === 'PathError') {
-        return { success: false, error: 'Path outside workspace' };
+        return { success: false, error: err.message };
       }
       return { success: false, error: err instanceof Error ? err.message : 'Failed to list directory' };
     }
@@ -115,7 +115,7 @@ toolRegistry.register({
   },
   execute: async (args, context) => {
     try {
-      const resolvedPath = validatePath(args.path as string, context.workspacePath);
+      const resolvedPath = resolveToolPath(args.path as string, context.workspacePath);
       const depth = Math.min(Math.max(Number(args.depth) || 3, 1), 5);
 
       if (!fs.existsSync(resolvedPath)) {
@@ -129,7 +129,7 @@ toolRegistry.register({
       return { success: true, data: lines.join('\n') };
     } catch (err) {
       if (err instanceof Error && err.name === 'PathError') {
-        return { success: false, error: 'Path outside workspace' };
+        return { success: false, error: err.message };
       }
       return { success: false, error: err instanceof Error ? err.message : 'Failed to generate tree' };
     }

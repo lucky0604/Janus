@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { toolRegistry } from './registry';
-import { validatePath } from './path-validator';
+import { resolveToolPath } from './path-validator';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next']);
 const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
@@ -99,7 +99,7 @@ toolRegistry.register({
   },
   execute: async (args, context) => {
     try {
-      const resolvedPath = validatePath(args.path as string, context.workspacePath);
+      const resolvedPath = resolveToolPath(args.path as string, context.workspacePath);
 
       if (!fs.existsSync(resolvedPath)) {
         return { success: false, error: `Path not found: ${args.path}` };
@@ -131,7 +131,7 @@ toolRegistry.register({
       return { success: true, data };
     } catch (err) {
       if (err instanceof Error && err.name === 'PathError') {
-        return { success: false, error: 'Path outside workspace' };
+        return { success: false, error: err.message };
       }
       return { success: false, error: err instanceof Error ? err.message : 'Search failed' };
     }

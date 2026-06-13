@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import { toolRegistry } from './registry';
-import { validatePath } from './path-validator';
+import { PathError } from './path-validator';
+import { rejectOutsideWorkspaceShell, resolveShellCwd } from './workspace-context';
 
 const DANGEROUS_PATTERNS = [
   /rm\s+-rf\s+\//,
@@ -15,7 +16,7 @@ const DANGEROUS_PATTERNS = [
 
 toolRegistry.register({
   name: 'shell_exec',
-  description: 'Execute a shell command in the workspace directory. 30s timeout. Safety filter active.',
+  description: 'Execute a shell command. 30s timeout. Safety filter active.',
   parameters: {
     type: 'object',
     properties: {
@@ -25,7 +26,7 @@ toolRegistry.register({
       },
       cwd: {
         type: 'string',
-        description: 'Working directory (defaults to workspace root)',
+        description: 'Working directory — absolute or relative to workspace (optional)',
       },
     },
     required: ['command'],
@@ -33,14 +34,17 @@ toolRegistry.register({
   execute: async (args, context) => {
     try {
       const command = args.command as string;
-      const cwd = args.cwd
-        ? validatePath(args.cwd as string, context.workspacePath)
-        : context.workspacePath;
+      const cwd = resolveShellCwd(context.workspacePath, args.cwd as string | undefined);
 
       for (const pattern of DANGEROUS_PATTERNS) {
         if (pattern.test(command)) {
           return { success: false, error: `Command blocked by safety filter` };
         }
+      }
+
+      const outsideBlock = rejectOutsideWorkspaceShell(command, context.workspacePath);
+      if (outsideBlock) {
+        return { success: false, error: outsideBlock };
       }
 
       const output = execSync(command, {
@@ -52,10 +56,10 @@ toolRegistry.register({
 
       return { success: true, data: output.slice(0, 100 * 1024) };
     } catch (err: unknown) {
+      if (err instanceof PathError) {
+        return { success: false, error: err.message };
+      }
       if (err instanceof Error) {
-        if (err.name === 'PathError') {
-          return { success: false, error: 'Path outside workspace' };
-        }
         const execErr = err as { stdout?: string; stderr?: string; status?: number; killed?: boolean };
         if (execErr.killed) {
           return { success: false, error: 'Command timed out after 30s' };

@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import { toolRegistry } from './registry';
-import { validatePath } from './path-validator';
+import { resolveToolPath } from './path-validator';
+import { resolveShellCwd } from './workspace-context';
 
 toolRegistry.register({
   name: 'git_status',
@@ -10,7 +11,7 @@ toolRegistry.register({
     properties: {
       path: {
         type: 'string',
-        description: 'Repository path (defaults to workspace root)',
+        description: 'Repository path — absolute or relative to workspace',
       },
     },
     required: [],
@@ -18,8 +19,8 @@ toolRegistry.register({
   execute: async (args, context) => {
     try {
       const repoPath = args.path
-        ? validatePath(args.path as string, context.workspacePath)
-        : context.workspacePath;
+        ? resolveToolPath(args.path as string, context.workspacePath)
+        : resolveShellCwd(context.workspacePath);
 
       const output = execSync('git status --porcelain', {
         cwd: repoPath,
@@ -54,7 +55,7 @@ toolRegistry.register({
     properties: {
       path: {
         type: 'string',
-        description: 'Repository path (defaults to workspace root)',
+        description: 'Repository path — absolute or relative to workspace',
       },
     },
     required: [],
@@ -62,8 +63,8 @@ toolRegistry.register({
   execute: async (args, context) => {
     try {
       const repoPath = args.path
-        ? validatePath(args.path as string, context.workspacePath)
-        : context.workspacePath;
+        ? resolveToolPath(args.path as string, context.workspacePath)
+        : resolveShellCwd(context.workspacePath);
 
       const output = execSync('git diff', {
         cwd: repoPath,

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { toolRegistry } from './registry';
-import { validatePath } from './path-validator';
+import { resolveToolPath } from './path-validator';
 
 toolRegistry.register({
   name: 'write_file',
@@ -11,7 +11,7 @@ toolRegistry.register({
     properties: {
       path: {
         type: 'string',
-        description: 'Path to write to, relative to workspace root',
+        description: 'Path to write to — absolute path or relative to workspace',
       },
       content: {
         type: 'string',
@@ -22,7 +22,7 @@ toolRegistry.register({
   },
   execute: async (args, context) => {
     try {
-      const resolvedPath = validatePath(args.path as string, context.workspacePath);
+      const resolvedPath = resolveToolPath(args.path as string, context.workspacePath);
       const content = args.content as string;
       const maxSize = 500 * 1024;
       if (Buffer.byteLength(content, 'utf-8') > maxSize) {
@@ -42,7 +42,7 @@ toolRegistry.register({
       return { success: true, data: `File written: ${args.path} (${bytesWritten} bytes)` };
     } catch (err) {
       if (err instanceof Error && err.name === 'PathError') {
-        return { success: false, error: 'Path outside workspace' };
+        return { success: false, error: err.message };
       }
       return { success: false, error: err instanceof Error ? err.message : 'Failed to write file' };
     }

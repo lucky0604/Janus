@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { toolRegistry } from './registry';
-import { validatePath } from './path-validator';
+import { resolveToolPath } from './path-validator';
 
 toolRegistry.register({
   name: 'read_file',
@@ -10,14 +10,14 @@ toolRegistry.register({
     properties: {
       path: {
         type: 'string',
-        description: 'Path to the file to read, relative to workspace root',
+        description: 'Path to the file — absolute or relative to workspace',
       },
     },
     required: ['path'],
   },
   execute: async (args, context) => {
     try {
-      const resolvedPath = validatePath(args.path as string, context.workspacePath);
+      const resolvedPath = resolveToolPath(args.path as string, context.workspacePath);
 
       if (!fs.existsSync(resolvedPath)) {
         return { success: false, error: `File not found: ${args.path}` };
@@ -38,7 +38,7 @@ toolRegistry.register({
       return { success: true, data: content };
     } catch (err) {
       if (err instanceof Error && err.name === 'PathError') {
-        return { success: false, error: 'Path outside workspace' };
+        return { success: false, error: err.message };
       }
       return { success: false, error: err instanceof Error ? err.message : 'Failed to read file' };
     }
