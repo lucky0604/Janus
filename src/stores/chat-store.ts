@@ -25,6 +25,7 @@ interface ChatState {
   addMessage: (msg: Message) => void;
   switchAgent: (agentId: string) => void;
   resetSession: () => void;
+  respondToApproval: (approvalId: string, approved: boolean) => Promise<void>;
 }
 
 let abortController: AbortController | null = null;
@@ -230,6 +231,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 }
                 break;
               }
+              case 'thinking': {
+                const thinkingData = event.data as { text?: string };
+                const thinkingContent = thinkingData.text ? `Thinking: ${thinkingData.text}` : 'Thinking...';
+                const thinkingMsg: Message = {
+                  id: generateId(),
+                  role: 'system',
+                  content: thinkingContent,
+                  timestamp: Date.now(),
+                };
+                set({ messages: [...get().messages, thinkingMsg] });
+                break;
+              }
               case 'tool_call': {
                 const tc = event.data as SSEToolCall;
                 let args: Record<string, unknown> = {};
@@ -337,6 +350,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 set({ messages: [...get().messages, evoMsg] });
                 break;
               }
+              case 'approval_required': {
+                if (!event.data || typeof event.data !== 'object') {
+                  console.warn('[chat-store] approval_required event missing data');
+                  break;
+                }
+                const raw = event.data as unknown as Record<string, unknown>;
+                if (!raw.id || !raw.name || raw.toolCallId === undefined) {
+                  console.warn('[chat-store] approval_required event missing required fields');
+                  break;
+                }
+                const ar = event.data;
+                const approvalMsg: Message = {
+                  id: generateId(),
+                  role: 'system',
+                  content: '',
+                  timestamp: Date.now(),
+                  eventMeta: {
+                    type: 'tool_approval',
+                    approvalId: ar.id,
+                    toolCallId: ar.toolCallId,
+                    toolName: ar.name,
+                    path: ar.path,
+                    contentPreview: ar.contentPreview,
+                    bytes: ar.bytes,
+                    status: 'pending',
+                  },
+                };
+                set({ messages: [...get().messages, approvalMsg] });
+                break;
+              }
+              case 'approval_resolved': {
+                if (!event.data || typeof event.data !== 'object') {
+                  console.warn('[chat-store] approval_resolved event missing data');
+                  break;
+                }
+                const raw = event.data as unknown as Record<string, unknown>;
+                if (!raw.id || raw.approved === undefined) {
+                  console.warn('[chat-store] approval_resolved event missing required fields');
+                  break;
+                }
+                const resolved = event.data;
+                const msgs = [...get().messages];
+                const idx = msgs.findIndex(
+                  (m) => m.eventMeta?.type === 'tool_approval' &&
+                    m.eventMeta.approvalId === resolved.id,
+                );
+                if (idx >= 0 && msgs[idx].eventMeta?.type === 'tool_approval') {
+                  msgs[idx] = {
+                    ...msgs[idx],
+                    eventMeta: {
+                      ...msgs[idx].eventMeta!,
+                      status: resolved.approved ? 'approved' : 'denied',
+                    },
+                  };
+                  set({ messages: [...msgs] });
+                }
+                break;
+              }
               case 'error': {
                 set({
                   isStreaming: false,
@@ -436,5 +507,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
     // Refresh session list after clearing
     useSessionStore.getState().refreshSessions();
+  },
+
+  respondToApproval: async (approvalId, approved) => {
+    const msgs = [...get().messages];
+    const idx = msgs.findIndex(
+      (m) => m.eventMeta?.type === 'tool_approval' &&
+        m.eventMeta.approvalId === approvalId &&
+        m.eventMeta.status === 'pending',
+    );
+    if (idx < 0) return;
+
+    try {
+      const res = await fetch('/api/chat/approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approvalId, approved }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        set({
+          errorMessage: (err as { error?: string }).error || 'Failed to submit approval',
+        });
+        return;
+      }
+
+      if (msgs[idx].eventMeta?.type === 'tool_approval') {
+        msgs[idx] = {
+          ...msgs[idx],
+          eventMeta: {
+            ...msgs[idx].eventMeta!,
+            status: approved ? 'approved' : 'denied',
+          },
+        };
+        set({ messages: [...msgs] });
+      }
+    } catch (err) {
+      set({
+        errorMessage: err instanceof Error ? err.message : 'Failed to submit approval',
+      });
+    }
   },
 }));

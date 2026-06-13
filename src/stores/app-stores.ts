@@ -264,7 +264,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   refreshSessions: async () => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await fetch('/api/sessions?scope=work');
       if (res.ok) {
         const data = await res.json();
         set({ sessions: data.sessions || [] });
