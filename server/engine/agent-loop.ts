@@ -13,6 +13,10 @@ import { NudgeEngine } from '../evolution/nudge-engine';
 import { PatternDetector } from '../evolution/pattern-detector';
 import { craftSkill } from '../evolution/skill-crafter';
 import { submitManyForReview, getPendingReviews } from '../evolution/skill-review';
+import { createApprovalId, waitForToolApproval } from './tool-approval';
+import { optionalWorkspaceRoot, workspacePromptBlock, noWorkspacePromptBlock } from '../tools/workspace-context';
+
+const APPROVAL_REQUIRED_TOOLS = new Set(['write_file']);
 
 const DEFAULT_SYSTEM_PROMPT = `You are Janus, an AI workspace assistant. You help users analyze, understand, and work with their local project files.
 
@@ -103,9 +107,13 @@ export async function* executeDialogTurn(
   if (!messagesArr.some((m) => m.role === 'system')) {
     // Layer 1: Inject resident memory into system prompt
     const basePrompt = resolveSystemPrompt(config);
+    const wsRoot = optionalWorkspaceRoot(config.workspacePath);
+    const pathBlock = wsRoot
+      ? `\n\n${workspacePromptBlock(wsRoot)}`
+      : `\n\n${noWorkspacePromptBlock()}`;
     const systemContent = residentMemory
-      ? `${basePrompt}\n\n${residentMemory}`
-      : basePrompt;
+      ? `${basePrompt}${pathBlock}\n\n${residentMemory}`
+      : `${basePrompt}${pathBlock}`;
 
     messagesArr.unshift({
       id: crypto.randomUUID(),
@@ -217,6 +225,50 @@ export async function* executeDialogTurn(
     for (const tc of toolCalls) {
       canceller.throwIfCancelled();
       try {
+        let approved = true;
+        if (APPROVAL_REQUIRED_TOOLS.has(tc.name)) {
+          const approvalId = createApprovalId();
+          const filePath = String(tc.arguments.path ?? '');
+          const content = String(tc.arguments.content ?? '');
+          const bytes = Buffer.byteLength(content, 'utf-8');
+
+          yield {
+            type: 'approval_required',
+            data: {
+              id: approvalId,
+              toolCallId: tc.id,
+              name: tc.name,
+              path: filePath,
+              contentPreview: content.slice(0, 800),
+              bytes,
+            },
+          };
+
+          approved = await waitForToolApproval(approvalId, 10 * 60 * 1000, signal);
+          if (signal?.aborted) return;
+          yield {
+            type: 'approval_resolved',
+            data: { id: approvalId, approved },
+          };
+        }
+
+        if (!approved) {
+          const output = `Error: User denied write permission for ${String(tc.arguments.path ?? 'file')}`;
+          messagesArr.push({
+            id: crypto.randomUUID(),
+            role: 'tool',
+            content: output,
+            toolCallId: tc.id,
+            timestamp: Date.now(),
+          });
+          yield {
+            type: 'tool_result',
+            data: { id: tc.id, name: tc.name, success: false, output },
+          };
+          sessionMemory.observe(`Tool Denied: ${tc.name} | Path: ${String(tc.arguments.path ?? '')}`);
+          continue;
+        }
+
         const result = await toolRegistry.execute(tc.name, tc.arguments, {
           workspacePath: config.workspacePath,
           sessionId: config.sessionId,

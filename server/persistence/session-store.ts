@@ -1,9 +1,15 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { Message, SessionMeta, DialogTurn } from '../../shared/types';
+import type { Message, SessionMeta, DialogTurn, SessionListScope } from '../../shared/types';
+import { sessionMatchesScope } from '../../shared/types';
 
 const SESSIONS_DIR = path.join(os.homedir(), '.janus', 'sessions');
+
+function normalizeWorkspacePath(workspacePath?: string): string | undefined {
+  if (!workspacePath) return undefined;
+  return path.resolve(workspacePath);
+}
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -17,10 +23,53 @@ function atomicWrite(filePath: string, data: string): void {
   fs.renameSync(tmp, filePath);
 }
 
+// --- Index write lock (prevents read-then-write races on index.json) ---
+let indexWriteLocked = false;
+const indexWriteQueue: Array<() => void> = [];
+
+function acquireIndexLock(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!indexWriteLocked) {
+      indexWriteLocked = true;
+      resolve();
+    } else {
+      indexWriteQueue.push(resolve);
+    }
+  });
+}
+
+function releaseIndexLock(): void {
+  if (indexWriteQueue.length > 0) {
+    const next = indexWriteQueue.shift()!;
+    setImmediate(() => next());
+  } else {
+    indexWriteLocked = false;
+  }
+}
+
+function getNextTurnIndex(sessionDir: string): number {
+  const turnsDir = path.join(sessionDir, 'turns');
+  if (!fs.existsSync(turnsDir)) return 0;
+
+  const files = fs.readdirSync(turnsDir).filter((f) => /^turn-\d{4}\.json$/.test(f));
+  if (files.length === 0) return 0;
+
+  let maxIndex = -1;
+  for (const file of files) {
+    const match = file.match(/^turn-(\d{4})\.json$/);
+    if (match) {
+      const idx = parseInt(match[1], 10);
+      if (idx > maxIndex) maxIndex = idx;
+    }
+  }
+  return maxIndex + 1;
+}
+
 export async function saveSession(
   sessionId: string,
   messages: Message[],
-  agentType: string
+  agentType: string,
+  workspacePath?: string
 ): Promise<void> {
   const dir = path.join(SESSIONS_DIR, sessionId);
   ensureDir(dir);
@@ -33,22 +82,24 @@ export async function saveSession(
     lastActiveAt: new Date().toISOString(),
     turnCount: 1,
     messageCount: messages.length,
+    ...(workspacePath && { projectPath: normalizeWorkspacePath(workspacePath) }),
   };
 
   atomicWrite(path.join(dir, 'metadata.json'), JSON.stringify(metadata, null, 2));
 
+  const nextTurnIndex = getNextTurnIndex(dir);
   const turn: DialogTurn = {
     turnId: crypto.randomUUID(),
-    turnIndex: 0,
+    turnIndex: nextTurnIndex,
     messages,
     startTime: new Date().toISOString(),
   };
 
-  const turnFile = path.join(dir, 'turns', 'turn-0000.json');
+  const turnFile = path.join(dir, 'turns', `turn-${String(nextTurnIndex).padStart(4, '0')}.json`);
   ensureDir(path.join(dir, 'turns'));
   atomicWrite(turnFile, JSON.stringify(turn, null, 2));
 
-  updateIndex(sessionId, metadata);
+  await updateIndex(sessionId, metadata);
 }
 
 export async function loadSession(sessionId: string): Promise<{ messages: Message[]; metadata: SessionMeta } | null> {
@@ -81,16 +132,37 @@ export async function loadSession(sessionId: string): Promise<{ messages: Messag
   }
 }
 
-export async function listSessions(): Promise<SessionMeta[]> {
+export interface ListSessionsOptions {
+  workspacePath?: string;
+  scope?: SessionListScope;
+}
+
+export async function listSessions(options?: ListSessionsOptions | string): Promise<SessionMeta[]> {
+  const opts: ListSessionsOptions =
+    typeof options === 'string' ? { workspacePath: options } : (options ?? {});
+
   ensureDir(SESSIONS_DIR);
 
   const indexFile = path.join(SESSIONS_DIR, 'index.json');
-  if (fs.existsSync(indexFile)) {
-    try {
-      return JSON.parse(fs.readFileSync(indexFile, 'utf-8'));
-    } catch {}
+  if (!fs.existsSync(indexFile)) return [];
+
+  let sessions: SessionMeta[] = [];
+  try {
+    sessions = JSON.parse(fs.readFileSync(indexFile, 'utf-8'));
+  } catch {}
+
+  if (opts.scope) {
+    sessions = sessions.filter((s) => sessionMatchesScope(s.agentType, opts.scope!));
   }
-  return [];
+
+  if (opts.workspacePath) {
+    const normalized = normalizeWorkspacePath(opts.workspacePath)!;
+    sessions = sessions.filter(
+      (s) => s.projectPath && normalizeWorkspacePath(s.projectPath) === normalized,
+    );
+  }
+
+  return sessions;
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
@@ -98,24 +170,123 @@ export async function deleteSession(sessionId: string): Promise<void> {
   if (fs.existsSync(dir)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  await removeFromIndex(sessionId);
 }
 
-function updateIndex(sessionId: string, metadata: SessionMeta): void {
-  ensureDir(SESSIONS_DIR);
-  const indexFile = path.join(SESSIONS_DIR, 'index.json');
+export async function createEmptySession(
+  sessionId: string,
+  agentType: string,
+  workspacePath?: string,
+  name?: string,
+): Promise<SessionMeta> {
+  return upsertSession(sessionId, [], agentType, workspacePath, name);
+}
 
-  let index: SessionMeta[] = [];
-  try {
-    index = JSON.parse(fs.readFileSync(indexFile, 'utf-8'));
-  } catch {}
+export async function upsertSession(
+  sessionId: string,
+  messages: Message[],
+  agentType: string,
+  workspacePath?: string,
+  sessionName?: string,
+): Promise<SessionMeta> {
+  const dir = path.join(SESSIONS_DIR, sessionId);
+  ensureDir(dir);
 
-  const existingIdx = index.findIndex((s) => s.sessionId === sessionId);
-  if (existingIdx >= 0) {
-    index[existingIdx] = metadata;
+  const metadataPath = path.join(dir, 'metadata.json');
+  let metadata: SessionMeta;
+
+  if (fs.existsSync(metadataPath)) {
+    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+    metadata.lastActiveAt = new Date().toISOString();
+    metadata.messageCount = messages.length;
+    metadata.agentType = agentType;
+    if (sessionName) metadata.name = sessionName;
+    if (workspacePath) metadata.projectPath = normalizeWorkspacePath(workspacePath);
   } else {
-    index.push(metadata);
+    metadata = {
+      sessionId,
+      name: sessionName || deriveSessionName(messages, sessionId),
+      agentType,
+      createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+      turnCount: 1,
+      messageCount: messages.length,
+      ...(workspacePath && { projectPath: normalizeWorkspacePath(workspacePath) }),
+    };
   }
 
-  index.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
-  atomicWrite(indexFile, JSON.stringify(index, null, 2));
+  atomicWrite(metadataPath, JSON.stringify(metadata, null, 2));
+
+  const nextTurnIndex = getNextTurnIndex(dir);
+  const turn: DialogTurn = {
+    turnId: crypto.randomUUID(),
+    turnIndex: nextTurnIndex,
+    messages,
+    startTime: metadata.createdAt,
+    endTime: new Date().toISOString(),
+  };
+
+  const turnsDir = path.join(dir, 'turns');
+  ensureDir(turnsDir);
+  atomicWrite(path.join(turnsDir, `turn-${String(nextTurnIndex).padStart(4, '0')}.json`), JSON.stringify(turn, null, 2));
+
+  await updateIndex(sessionId, metadata);
+  return metadata;
+}
+
+function deriveSessionName(messages: Message[], sessionId: string): string {
+  const firstUser = messages.find((m) => m.role === 'user');
+  if (firstUser?.content) {
+    const trimmed = firstUser.content.trim().replace(/\s+/g, ' ');
+    return trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed;
+  }
+  return `Session ${sessionId.slice(0, 8)}`;
+}
+
+async function removeFromIndex(sessionId: string): Promise<void> {
+  await acquireIndexLock();
+  try {
+    ensureDir(SESSIONS_DIR);
+    const indexFile = path.join(SESSIONS_DIR, 'index.json');
+    if (!fs.existsSync(indexFile)) return;
+
+    let index: SessionMeta[] = [];
+    try {
+      index = JSON.parse(fs.readFileSync(indexFile, 'utf-8'));
+    } catch {
+      return;
+    }
+
+    const filtered = index.filter((s) => s.sessionId !== sessionId);
+    if (filtered.length !== index.length) {
+      atomicWrite(indexFile, JSON.stringify(filtered, null, 2));
+    }
+  } finally {
+    releaseIndexLock();
+  }
+}
+
+async function updateIndex(sessionId: string, metadata: SessionMeta): Promise<void> {
+  await acquireIndexLock();
+  try {
+    ensureDir(SESSIONS_DIR);
+    const indexFile = path.join(SESSIONS_DIR, 'index.json');
+
+    let index: SessionMeta[] = [];
+    try {
+      index = JSON.parse(fs.readFileSync(indexFile, 'utf-8'));
+    } catch {}
+
+    const existingIdx = index.findIndex((s) => s.sessionId === sessionId);
+    if (existingIdx >= 0) {
+      index[existingIdx] = metadata;
+    } else {
+      index.push(metadata);
+    }
+
+    index.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
+    atomicWrite(indexFile, JSON.stringify(index, null, 2));
+  } finally {
+    releaseIndexLock();
+  }
 }
