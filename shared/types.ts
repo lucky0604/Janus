@@ -20,13 +20,24 @@ export interface SkillReviewMeta {
   skill: { id: string; name: string; description: string; status: string };
 }
 
+export interface ToolApprovalMeta {
+  type: 'tool_approval';
+  approvalId: string;
+  toolCallId: string;
+  toolName: string;
+  path: string;
+  contentPreview: string;
+  bytes: number;
+  status: 'pending' | 'approved' | 'denied' | 'timeout';
+}
+
 export interface EvolutionEventMeta {
   type: 'evolution_event';
   event: string;
   detail?: string;
 }
 
-export type EventMeta = MemoryRecallMeta | SkillReviewMeta | EvolutionEventMeta;
+export type EventMeta = MemoryRecallMeta | SkillReviewMeta | EvolutionEventMeta | ToolApprovalMeta;
 
 export interface Message {
   id: string;
@@ -79,13 +90,23 @@ export type StreamEventType =
   | 'memory_recall'    // Memory recall notification
   | 'skill_review'     // Skill review request
   | 'evolution_event'  // Evolution event
+  | 'approval_required'
+  | 'approval_resolved'
   | 'error'
   | 'done';
 
-export interface StreamEvent {
-  type: StreamEventType;
-  data: unknown;
-}
+export type StreamEvent =
+  | { type: 'text_delta'; data: SSETextDelta }
+  | { type: 'tool_call'; data: SSEToolCall }
+  | { type: 'tool_result'; data: SSEToolResult }
+  | { type: 'thinking'; data: { text?: string } }
+  | { type: 'memory_recall'; data: SSEMemoryRecall }
+  | { type: 'skill_review'; data: SSESkillReview | { count: number; skills: Array<{ id: string; name: string; description: string; status: string }>; message?: string } }
+  | { type: 'evolution_event'; data: SSEEvolutionEvent }
+  | { type: 'approval_required'; data: SSEApprovalRequired }
+  | { type: 'approval_resolved'; data: SSEApprovalResolved }
+  | { type: 'error'; data: { message: string } }
+  | { type: 'done'; data: SSEDone & { messages?: Message[] } };
 
 // ---- Agent System ----
 export type CapabilityCategory = 'coding' | 'docs' | 'analysis' | 'testing' | 'file_ops' | 'ops';
@@ -131,6 +152,16 @@ export interface RoleDefinition {
 }
 
 // ---- Session ----
+/** CLI relay sessions in Code Mode scene (distinct from Work Mode chat sessions). */
+export const CODE_MODE_SESSION_AGENT = 'code-mode';
+
+export type SessionListScope = 'work' | 'code-mode';
+
+export function sessionMatchesScope(agentType: string, scope: SessionListScope): boolean {
+  if (scope === 'code-mode') return agentType === CODE_MODE_SESSION_AGENT;
+  return agentType !== CODE_MODE_SESSION_AGENT;
+}
+
 export interface SessionMeta {
   sessionId: string;
   name: string;
@@ -139,6 +170,18 @@ export interface SessionMeta {
   lastActiveAt: string;
   turnCount: number;
   messageCount: number;
+  projectPath?: string;
+}
+
+// ---- Project Management ----
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  path: string;
+  gitBranch?: string;
+  isGitClean?: boolean;
+  lastAccessedAt: string;
+  createdAt: string;
 }
 
 export interface DialogTurn {
@@ -209,6 +252,8 @@ export interface CliDetectionResult {
   available: boolean;
   binaryPath: string | null;
   models: string[];
+  /** Preferred model for this CLI (from local config when detectable). */
+  defaultModel?: string;
 }
 
 // ---- SSE Event from server ----
@@ -230,7 +275,7 @@ export interface SSEToolResult {
 }
 
 export interface SSEDone {
-  reason: 'complete' | 'max_rounds' | 'loop_detected' | 'cancelled' | 'error';
+  reason: string;
 }
 
 export interface SSEMemoryRecall {
@@ -245,4 +290,18 @@ export interface SSESkillReview {
 export interface SSEEvolutionEvent {
   event: string;
   detail?: string;
+}
+
+export interface SSEApprovalRequired {
+  id: string;
+  toolCallId: string;
+  name: string;
+  path: string;
+  contentPreview: string;
+  bytes: number;
+}
+
+export interface SSEApprovalResolved {
+  id: string;
+  approved: boolean;
 }
