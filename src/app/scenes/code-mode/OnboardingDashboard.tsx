@@ -28,11 +28,7 @@ interface OnboardingStatus {
   };
 }
 
-interface Props {
-  onStartSession: () => void;
-}
-
-export function OnboardingDashboard({ onStartSession }: Props) {
+export function OnboardingDashboard() {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,34 +81,9 @@ export function OnboardingDashboard({ onStartSession }: Props) {
     );
   }
 
-  const availableCount = status.clis.filter((c) => c.available).length;
-  const hasAnyKey = status.environment.hasAnthropicKey || status.environment.hasOpenaiKey;
-
   return (
     <div className={styles.onboardingContainer}>
       <div className={styles.onboardingInner}>
-        {/* Workspace */}
-        <div className={styles.workspaceSection}>
-          <div className={styles.workspacePath}>
-            <span className={styles.workspaceIcon}>📁</span>
-            <span>{shortenPath(status.workspace.path)}</span>
-          </div>
-          {status.workspace.hasGit && (
-            <div className={styles.branchInfo}>
-              {status.workspace.branch && (
-                <span className={styles.branchBadge}>
-                  ⎇ {status.workspace.branch}
-                </span>
-              )}
-              <span className={status.workspace.isClean ? styles.cleanBadge : styles.dirtyBadge}>
-                {status.workspace.isClean ? '● clean' : '● uncommitted'}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className={styles.divider} />
-
         {/* CLI Environment */}
         <div className={styles.sectionTitle}>
           <span>⚡</span>
@@ -163,29 +134,11 @@ export function OnboardingDashboard({ onStartSession }: Props) {
 
         {/* CTA */}
         <div className={styles.ctaSection}>
-          <button
-            className={styles.ctaButton}
-            onClick={onStartSession}
-            disabled={availableCount === 0 && !hasAnyKey}
-          >
-            <span className={styles.ctaIcon}>◆</span>
-            <span>创建第一个 Code Mode 会话</span>
-          </button>
+          <p className={styles.ctaHint}>
+            Use <strong>+ Add Project</strong> in the sidebar to import a local folder.
+          </p>
         </div>
       </div>
     </div>
   );
-}
-
-function shortenPath(p: string): string {
-  if (p.startsWith('/Users/')) {
-    const parts = p.split('/');
-    if (parts.length > 3) {
-      return '~/' + parts.slice(3).join('/');
-    }
-  }
-  if (p.length > 50) {
-    return '...' + p.slice(-47);
-  }
-  return p;
 }

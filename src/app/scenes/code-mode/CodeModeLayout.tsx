@@ -39,11 +39,11 @@ export function CodeModeLayout({ sidebar, chat, inspector }: Props) {
 
         if (edge === 'left') {
           const next = Math.max(MIN_SIDEBAR, startSidebar + dx);
-          const maxSidebar = totalW - MIN_CHAT - inspectorWidth;
+          const maxSidebar = totalW - MIN_CHAT - (showInspector ? inspectorWidth : 0);
           setSidebarWidth(Math.min(next, maxSidebar));
         } else {
           const next = Math.max(MIN_INSPECTOR, startInspector - dx);
-          const maxInspector = totalW - MIN_CHAT - sidebarWidth;
+          const maxInspector = totalW - MIN_CHAT - (showSidebar ? sidebarWidth : 0);
           setInspectorWidth(Math.min(next, maxInspector));
         }
       };
@@ -57,7 +57,7 @@ export function CodeModeLayout({ sidebar, chat, inspector }: Props) {
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     },
-    [sidebarWidth, inspectorWidth, setSidebarWidth, setInspectorWidth],
+    [sidebarWidth, inspectorWidth, showSidebar, showInspector, setSidebarWidth, setInspectorWidth],
   );
 
   return (
@@ -69,7 +69,6 @@ export function CodeModeLayout({ sidebar, chat, inspector }: Props) {
       {/* Sidebar — only rendered when non-null content provided */}
       {showSidebar && (
         <div className={styles.sidebar} style={{ width: sidebarWidth }}>
-          <div className={styles.sidebarHeader}>Relay Log</div>
           <div className={styles.sidebarContent}>{sidebar}</div>
         </div>
       )}
@@ -79,6 +78,19 @@ export function CodeModeLayout({ sidebar, chat, inspector }: Props) {
           className={styles.dragHandleLeft}
           style={{ left: sidebarWidth - 3 }}
           onMouseDown={onMouseDown('left')}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowRight') {
+              const newWidth = Math.min(sidebarWidth + 20, 600);
+              setSidebarWidth(newWidth);
+            } else if (e.key === 'ArrowLeft') {
+              const newWidth = Math.max(MIN_SIDEBAR, sidebarWidth - 20);
+              setSidebarWidth(newWidth);
+            }
+          }}
         />
       )}
 
@@ -93,6 +105,19 @@ export function CodeModeLayout({ sidebar, chat, inspector }: Props) {
           className={styles.dragHandleRight}
           style={{ right: inspectorWidth - 3 }}
           onMouseDown={onMouseDown('right')}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize inspector"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') {
+              const newWidth = Math.min(inspectorWidth + 20, 800);
+              setInspectorWidth(newWidth);
+            } else if (e.key === 'ArrowRight') {
+              const newWidth = Math.max(MIN_INSPECTOR, inspectorWidth - 20);
+              setInspectorWidth(newWidth);
+            }
+          }}
         />
       )}
 

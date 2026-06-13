@@ -198,6 +198,16 @@
   margin-top: 32px;
 }
 
+.ctaHint {
+  font-size: 14px;
+  color: var(--color-text-secondary, #999);
+  line-height: 1.5;
+}
+
+.ctaHint strong {
+  color: var(--color-text-primary, #eee);
+}
+
 .ctaButton {
   display: inline-flex;
   align-items: center;

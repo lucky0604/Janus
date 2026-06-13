@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -7,141 +7,172 @@ import { ComposerConsole } from './ComposerConsole';
 import { InspectorPane, type ToolCardData } from './InspectorPane';
 import { PtyDrawer } from './PtyDrawer';
 import { OnboardingDashboard } from './OnboardingDashboard';
-import { useCodeModeStore } from '../../../stores/app-stores';
+import { ProjectSidebar } from './ProjectSidebar';
+import { CodeModeHeader } from './CodeModeHeader';
+import { applyRelayToolEvent } from './relay-tool-events';
+import { useProjectStore } from '../../../stores/project-store';
+import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
+import emptyStyles from './CodeModeEmpty.module.css';
 import msgStyles from '../chat/MessageList.module.css';
 
-interface ChatMsg {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-}
-
 export function CodeModeScene() {
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [tools, setTools] = useState<ToolCardData[]>([]);
-  const [sessionStarted, setSessionStarted] = useState(false);
-  const { isExecuting } = useCodeModeStore();
+  const { projects, activeProjectId } = useProjectStore();
+  const {
+    activeSessionId,
+    messages,
+    appendExchange,
+    switchToProject,
+    isSessionExecuting,
+  } = useCodeModeSessionStore();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const initializedProjectIdRef = useRef<string | null>(null);
+  const toolsCacheRef = useRef(new Map<string, ToolCardData[]>());
+  const [tools, setTools] = useStateTools(activeSessionId, toolsCacheRef);
+
+  const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
+  const isThinking = activeSessionId ? isSessionExecuting(activeSessionId) : false;
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const handleUserSend = useCallback((prompt: string) => {
-    const userMsg: ChatMsg = { id: `u-${Date.now()}`, role: 'user', content: prompt };
-    const aiMsg: ChatMsg = { id: `a-${Date.now()}`, role: 'assistant', content: '' };
-    setMessages((prev) => [...prev, userMsg, aiMsg]);
-    setTools([]);
-  }, []);
+  useEffect(() => {
+    if (!activeProject) return;
+    if (initializedProjectIdRef.current === activeProject.id) return;
+    initializedProjectIdRef.current = activeProject.id;
+    void switchToProject(activeProject.path);
+  }, [activeProject?.id, activeProject?.path, switchToProject]);
 
-  const handleStreamEvent = useCallback((event: { type: string; data: unknown }) => {
-    if (event.type === 'text_delta') {
-      const text = (event.data as { text?: string })?.text ?? '';
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== 'assistant') return prev;
-        return [...prev.slice(0, -1), { ...last, content: last.content + text }];
-      });
-    } else if (event.type === 'error') {
-      const msg = (event.data as { message?: string })?.message ?? 'Unknown error';
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.role !== 'assistant') return prev;
-        return [...prev.slice(0, -1), { ...last, content: last.content + `\n\n> **Error:** ${msg}` }];
-      });
-    } else if (event.type === 'tool_call') {
-      const tc = event.data as { id?: string; name?: string };
-      setTools((prev) => [...prev, {
-        id: tc.id ?? `tool-${Date.now()}`,
-        name: tc.name ?? 'unknown',
-        status: 'running',
-        summary: '',
-      }]);
-    } else if (event.type === 'tool_result') {
-      const tr = event.data as { id?: string };
-      if (tr.id) {
-        setTools((prev) => prev.map((t) =>
-          t.id === tr.id ? { ...t, status: 'done' as const } : t
-        ));
-      }
+  const handleUserSend = useCallback((prompt: string) => {
+    if (!activeSessionId) return;
+    appendExchange(prompt);
+    toolsCacheRef.current.set(activeSessionId, []);
+    setTools([]);
+  }, [appendExchange, activeSessionId]);
+
+  const handleStreamEvent = useCallback((sessionId: string, event: { type: string; data: unknown }) => {
+    const prev = toolsCacheRef.current.get(sessionId) ?? [];
+    const next = applyRelayToolEvent(prev, event);
+    toolsCacheRef.current.set(sessionId, next);
+    if (sessionId === useCodeModeSessionStore.getState().activeSessionId) {
+      setTools(next);
     }
   }, []);
 
-  const emptyState = messages.length === 0 && !sessionStarted;
-  const showOnboarding = emptyState;
+  const showProjectOnboarding = projects.length === 0;
+  const showProjectReady = !showProjectOnboarding && !!activeProject;
 
-  const handleStartSession = useCallback(() => {
-    setSessionStarted(true);
-  }, []);
-
-  if (showOnboarding) {
-    return (
-      <CodeModeLayout
-        chat={
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ flex: 1, overflow: 'auto' }}>
-              <OnboardingDashboard onStartSession={handleStartSession} />
+  const chatBody = showProjectOnboarding ? (
+    <OnboardingDashboard />
+  ) : !showProjectReady ? (
+    <div className={emptyStyles.emptyState}>
+      <h2 className={emptyStyles.title}>Select a project</h2>
+      <p className={emptyStyles.text}>
+        Choose a project from the sidebar to start relaying to your local CLI.
+      </p>
+    </div>
+  ) : (
+    <>
+      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+        <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+          {messages.length === 0 ? (
+            <div className={emptyStyles.emptyState} style={{ minHeight: '240px' }}>
+              <h2 className={emptyStyles.title}>{activeProject.name}</h2>
+              <p className={emptyStyles.text}>
+                Ask anything about this codebase. Messages relay to your selected CLI
+                in <code>{shortenPath(activeProject.path)}</code>.
+              </p>
             </div>
-            <ComposerConsole onStreamEvent={handleStreamEvent} onSend={handleUserSend} />
-          </div>
-        }
-        inspector={<InspectorPane tools={tools} />}
-      />
-    );
-  }
+          ) : (
+            <div className={msgStyles.messageList}>
+              {messages.map((msg, i) => (
+                <div
+                  key={msg.id}
+                  className={`${msgStyles.message} ${msg.role === 'user' ? msgStyles.userMessage : msgStyles.assistantMessage}`}
+                >
+                  {msg.role === 'user' ? (
+                    <div className={msgStyles.messageHeader}>
+                      <div className={msgStyles.avatarUser}>U</div>
+                      <span className={msgStyles.senderName}>You</span>
+                    </div>
+                  ) : (
+                    <div className={msgStyles.messageHeader}>
+                      <div className={msgStyles.avatarAssistant}>J</div>
+                      <span className={`${msgStyles.senderName} ${msgStyles.senderNameAssistant}`}>Janus</span>
+                      <span className={msgStyles.aiBadge}>Relay</span>
+                    </div>
+                  )}
+                  <div className={msgStyles.content}>
+                    {msg.role === 'assistant' ? (
+                      msg.content ? (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      ) : (
+                        isThinking && i === messages.length - 1 ? (
+                          <div className={msgStyles.thinkingContainer}>
+                            <div className={msgStyles.thinkingDot} />
+                            <div className={msgStyles.thinkingDot} />
+                            <div className={msgStyles.thinkingDot} />
+                            <span className={msgStyles.thinkingText}>Thinking...</span>
+                          </div>
+                        ) : null
+                      )
+                    ) : (
+                      msg.content
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <PtyDrawer />
+    </>
+  );
 
   return (
     <CodeModeLayout
+      sidebar={<ProjectSidebar />}
       chat={
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
-            <div style={{ maxWidth: '720px', margin: '0 auto' }}>
-              <div className={msgStyles.messageList}>
-                {messages.map((msg, i) => (
-                    <div key={msg.id} className={`${msgStyles.message} ${msg.role === 'user' ? msgStyles.userMessage : msgStyles.assistantMessage}`}>
-                      {msg.role === 'user' ? (
-                        <div className={msgStyles.messageHeader}>
-                          <div className={msgStyles.avatarUser}>U</div>
-                          <span className={msgStyles.senderName}>You</span>
-                        </div>
-                      ) : (
-                        <div className={msgStyles.messageHeader}>
-                          <div className={msgStyles.avatarAssistant}>J</div>
-                          <span className={`${msgStyles.senderName} ${msgStyles.senderNameAssistant}`}>Janus</span>
-                          <span className={msgStyles.aiBadge}>Relay</span>
-                        </div>
-                      )}
-                      <div className={msgStyles.content}>
-                        {msg.role === 'assistant' ? (
-                          msg.content ? (
-                            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                              {msg.content}
-                            </ReactMarkdown>
-                          ) : (
-                            isExecuting && i === messages.length - 1 ? (
-                              <div className={msgStyles.thinkingContainer}>
-                                <div className={msgStyles.thinkingDot} />
-                                <div className={msgStyles.thinkingDot} />
-                                <div className={msgStyles.thinkingDot} />
-                                <span className={msgStyles.thinkingText}>Thinking...</span>
-                              </div>
-                            ) : null
-                          )
-                        ) : (
-                          msg.content
-                        )}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
+          <CodeModeHeader />
+          <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+            {chatBody}
           </div>
-          <PtyDrawer />
           <ComposerConsole onStreamEvent={handleStreamEvent} onSend={handleUserSend} />
         </div>
       }
       inspector={<InspectorPane tools={tools} />}
     />
   );
+}
+
+function shortenPath(p: string): string {
+  if (p.startsWith('/Users/')) {
+    const parts = p.split('/');
+    if (parts.length > 3) return '~/' + parts.slice(3).join('/');
+  }
+  if (p.length > 48) return '…' + p.slice(-45);
+  return p;
+}
+
+/** Restore inspector tools when switching sessions. */
+function useStateTools(
+  activeSessionId: string | null,
+  cacheRef: MutableRefObject<Map<string, ToolCardData[]>>,
+): [ToolCardData[], Dispatch<SetStateAction<ToolCardData[]>>] {
+  const [tools, setTools] = useState<ToolCardData[]>([]);
+
+  useEffect(() => {
+    if (!activeSessionId) {
+      setTools([]);
+      return;
+    }
+    setTools(cacheRef.current.get(activeSessionId) ?? []);
+  }, [activeSessionId, cacheRef]);
+
+  return [tools, setTools];
 }
