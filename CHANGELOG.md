@@ -4,13 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.5.0] - 2026-06-12
+
+### Added
+- Code Mode with multi-agent CLI relay architecture (Claude Code, OpenCode, Codex)
+- Code Mode frontend scenes: ComposerConsole with bottom-sheet pickers, OnboardingDashboard
+- CLI detection and management via `server/code-mode/cli-registry.ts`
+- Git auto-syncing for Code Mode sessions (stash/sync/restore via `git-syncer.ts`)
+- Subprocess-based CLI runner with PTY support (`server/code-mode/subprocess-runner.ts`)
+- Multi-agent handoff with context preservation (todos, stash, commit anchoring) via `handoff-helper.ts`
+- SSE streaming relay from external CLIs via `server/code-mode/stream-routes.ts`
+- Onboarding API (`/onboarding/status`) for workspace Git status, CLI availability, and API key checks
+- Terminal Spike exploration scene for interactive terminal access
+- Narrow-screen responsive picker sheets for CLI and model selection (<768px)
+- Electron PTY shell support with IPC bridge (`electron/pty-manager.ts`)
+
+### Changed
+- Operating mode + agent role architecture replaces legacy agentId system
+- App layout refactored for scene-based routing (welcome, chat, code_mode, terminal_spike, settings)
+- Session sidebar redesigned for Work Mode / Code Mode session contexts
+- Server routes restructured with `createJanusServer` factory for standalone + Electron
+- Chat store extended with `mode`/`role` state management and ProviderConfig
+- Session persistence expanded with `agentType`, `projectPath`, and scope-based listing
+
+### Security
+- Session ID validation enforces UUID v4 format for all session route parameters
+
+---
+
 ## [0.2.4.0] - 2026-06-12
 
 ### Added
 - Code Mode Onboarding Dashboard showing workspace Git status, CLI availability, and API key configuration
 - Runtime validation for API responses to prevent crashes from malformed JSON
 - Narrow-screen responsive picker sheets for CLI and model selection (<768px)
-- Focus trap with keyboard shortcuts (Y/N/Escape) for approval cards
+- Approval card UI with tool write confirmation, content preview, and timeout handling
 
 ### Changed
 - Removed empty state placeholder when no session exists — replaced by OnboardingDashboard
