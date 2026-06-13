@@ -6,7 +6,9 @@ import { fileURLToPath } from 'url';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { Message } from '../shared/types';
 import { handleChatStream, handleGetMessages } from './routes/chat';
-import { listSessions, loadSession, deleteSession } from './persistence/session-store';
+import { resolveToolApproval } from './engine/tool-approval';
+import { handleProjects } from './routes/projects';
+import { handleSessionRoutes } from './routes/sessions';
 import { agentRegistry } from './agents/registry';
 import { OPERATING_MODES, AGENT_ROLES, promptFileKey, compositeId, compositeName } from './agents/config';
 import Database from 'better-sqlite3';
@@ -14,6 +16,7 @@ import Database from 'better-sqlite3';
 import { handleCodeModeRoutes } from './code-mode/handoff-routes';
 import { handleStreamRoutes } from './code-mode/stream-routes';
 import { handleOnboardingRoutes } from './code-mode/onboarding-routes';
+import { readBody } from './utils/read-body';
 
 // Register all tools (side-effect imports)
 import './tools/read-file';
@@ -109,91 +112,6 @@ function handleAgentsList(_req: IncomingMessage, res: ServerResponse): Promise<v
   return Promise.resolve();
 }
 
-/**
- * Handle GET /api/sessions — return session list.
- */
-async function handleSessionsList(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  try {
-    const sessions = await listSessions();
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ sessions }));
-  } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Failed to list sessions' }));
-  }
-}
-
-/**
- * Handle POST /api/sessions/:id/load — load session messages.
- */
-async function handleSessionLoad(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const sessionId = extractPathSegment(req.url || '', '/sessions/', '/load');
-  if (!sessionId) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing sessionId' }));
-    return;
-  }
-  try {
-    const session = await loadSession(sessionId);
-    if (!session) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Session not found' }));
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ messages: session.messages, metadata: session.metadata }));
-  } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Failed to load session' }));
-  }
-}
-
-/**
- * Handle DELETE /api/sessions/:id — delete session.
- */
-async function handleSessionDelete(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const sessionId = extractPathSegment(req.url || '', '/sessions/', '');
-  if (!sessionId) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing sessionId' }));
-    return;
-  }
-  try {
-    await deleteSession(sessionId);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true }));
-  } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Failed to delete session' }));
-  }
-}
-
-/**
- * UUID v4 regex: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
- */
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/**
- * Extract a path segment between a prefix and optional suffix, then validate it's a UUID.
- * e.g. extractPathSegment('/sessions/abc123-.../load', '/sessions/', '/load') → 'abc123-...'
- * Returns empty string if segment is missing, too long, or not a valid UUID (prevents path traversal).
- */
-function extractPathSegment(url: string, prefix: string, suffix: string): string {
-  const start = url.indexOf(prefix);
-  if (start < 0) return '';
-  let segment = url.slice(start + prefix.length);
-  if (suffix) {
-    const end = segment.indexOf(suffix);
-    if (end >= 0) segment = segment.slice(0, end);
-  }
-  // Remove any trailing query string
-  const qs = segment.indexOf('?');
-  if (qs >= 0) segment = segment.slice(0, qs);
-  // Validate: must be a UUID-like string (prevents path traversal via `../../etc/passwd`)
-  if (!segment || segment.length > 64 || !UUID_V4_RE.test(segment)) return '';
-  return segment;
-}
-
 // ---- Shared API route handler (used by both prod server and Vite dev) ----
 
 function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -202,7 +120,7 @@ function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<vo
 
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
 
   if (req.method === 'OPTIONS') {
@@ -213,6 +131,10 @@ function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<vo
 
   if (req.method === 'POST' && pathname === '/chat/stream') {
     return handleStreamRequest(req, res);
+  }
+
+  if (req.method === 'POST' && pathname === '/chat/approval') {
+    return handleApprovalRequest(req, res);
   }
 
   if (req.method === 'GET' && pathname === '/chat/messages') {
@@ -234,23 +156,19 @@ function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<vo
   }
 
   // Session management
-  if (req.method === 'GET' && pathname === '/sessions') {
-    return handleSessionsList(req, res);
+  if (pathname.startsWith('/sessions')) {
+    return handleSessionRoutes(req, res);
   }
 
-  if (req.method === 'POST' && pathname.startsWith('/sessions/') && pathname.endsWith('/load')) {
-    return handleSessionLoad(req, res);
+  if (pathname.startsWith('/projects')) {
+    return handleProjects(req, res);
   }
 
-  if (req.method === 'DELETE' && pathname.startsWith('/sessions/')) {
-    return handleSessionDelete(req, res);
-  }
-
-  // Code Mode relay routes — workspace resolved from query param or env
   if (pathname.startsWith('/code-mode/') || pathname.startsWith('/onboarding/')) {
-    const codeModeWorkspace = url.searchParams.get('workspace')
+    const rawWorkspace = url.searchParams.get('workspace')
       || process.env.JANUS_WORKSPACE
-      || process.cwd();
+      || '';
+    const codeModeWorkspace = rawWorkspace ? path.resolve(rawWorkspace) : process.cwd();
     const fullPath = '/api' + pathname;
     const handled =
       handleCodeModeRoutes(req, res, fullPath, codeModeWorkspace) ||
@@ -386,6 +304,28 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+async function handleApprovalRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readBody(req);
+  const approvalId = typeof body.approvalId === 'string' ? body.approvalId : '';
+  const approved = body.approved === true;
+
+  if (!approvalId) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'approvalId required' }));
+    return;
+  }
+
+  const ok = resolveToolApproval(approvalId, approved);
+  if (!ok) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Approval not found or already resolved' }));
+    return;
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ success: true }));
+}
+
 async function handleMessagesRequest(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   const sessionId = url.searchParams.get('sessionId') || 'default';
@@ -393,31 +333,6 @@ async function handleMessagesRequest(req: IncomingMessage, res: ServerResponse) 
   const result = await handleGetMessages(sessionId);
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(result));
-}
-
-function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const MAX_BODY = 1024 * 1024; // 1MB
-  return new Promise((resolve) => {
-    let data = '';
-    let size = 0;
-    req.on('data', (chunk: Buffer | string) => {
-      size += chunk.length;
-      if (size > MAX_BODY) {
-        req.destroy();
-        resolve({ error: 'Request body too large' });
-        return;
-      }
-      data += chunk;
-    });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(data) as Record<string, unknown>);
-      } catch {
-        resolve({});
-      }
-    });
-    req.on('error', () => resolve({}));
-  });
 }
 
 // ---- Server factory: used by both standalone prod and Electron ----
