@@ -47,10 +47,8 @@ function PickerSheet({ title, options, onSelect, onClose }: PickerSheetProps) {
             onClick={() => !opt.disabled && onSelect(opt.id)}
             disabled={opt.disabled}
           >
-            <span>{opt.label}</span>
-            <span className={styles.sheetOptionStatus}>
-              {opt.disabled ? '✗' : opt.active ? '●' : ''}
-            </span>
+            <span>{opt.active && <span className={styles.sheetCheck}>✓ </span>}{opt.label}</span>
+            <span className={styles.sheetOptionStatus}></span>
           </button>
         ))}
       </div>
@@ -240,9 +238,9 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
             {loading ? (
               <option>Detecting...</option>
             ) : (
-              cliResults.map((cli) => (
-                <option key={cli.id} value={cli.id} disabled={!cli.available}>
-                  {cli.displayName} {cli.available ? '✓' : '✗ Not installed'}
+              cliResults.filter((c) => c.available).map((cli) => (
+                <option key={cli.id} value={cli.id}>
+                  {cli.displayName}
                 </option>
               ))
             )}
@@ -303,10 +301,9 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       {sheetType === 'cli' && (
         <PickerSheet
           title="Select Agent CLI"
-          options={cliResults.map((cli) => ({
+          options={cliResults.filter((c) => c.available).map((cli) => ({
             id: cli.id,
-            label: `${cli.displayName} ${cli.available ? '✓' : '✗'}`,
-            disabled: !cli.available,
+            label: cli.displayName,
             active: cli.id === activeCli,
           }))}
           onSelect={handleCliSheetSelect}

@@ -187,6 +187,12 @@
   color: var(--color-text-secondary, #999);
 }
 
+.sheetCheck {
+  color: var(--color-accent, rgba(45, 212, 191, 0.9));
+  font-weight: 700;
+  font-size: 14px;
+}
+
 .selectWrapper {
   position: relative;
   flex: 1;

@@ -9,6 +9,7 @@ import { PtyDrawer } from './PtyDrawer';
 import { OnboardingDashboard } from './OnboardingDashboard';
 import { ProjectSidebar } from './ProjectSidebar';
 import { CodeModeHeader } from './CodeModeHeader';
+import { ThinkingBlock, ToolEventBlock, ProgressBlock } from './CodeModeMessageBlocks';
 import { applyRelayToolEvent } from './relay-tool-events';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
@@ -105,20 +106,38 @@ export function CodeModeScene() {
                   )}
                   <div className={msgStyles.content}>
                     {msg.role === 'assistant' ? (
-                      msg.content ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                          {msg.content}
-                        </ReactMarkdown>
-                      ) : (
-                        isThinking && i === messages.length - 1 ? (
-                          <div className={msgStyles.thinkingContainer}>
-                            <div className={msgStyles.thinkingDot} />
-                            <div className={msgStyles.thinkingDot} />
-                            <div className={msgStyles.thinkingDot} />
-                            <span className={msgStyles.thinkingText}>Thinking...</span>
+                      <>
+                        {/* Inline thinking block */}
+                        {msg.thinking && <ThinkingBlock text={msg.thinking} />}
+
+                        {/* Inline progress logs */}
+                        {msg.progress && msg.progress.length > 0 && <ProgressBlock logs={msg.progress} />}
+
+                        {/* Inline tool call cards */}
+                        {msg.toolCalls && msg.toolCalls.length > 0 && (
+                          <div style={{ margin: '4px 0' }}>
+                            {msg.toolCalls.map((tc) => (
+                              <ToolEventBlock key={tc.id} tool={tc} />
+                            ))}
                           </div>
-                        ) : null
-                      )
+                        )}
+
+                        {/* Main text content */}
+                        {msg.content ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        ) : (
+                          isThinking && i === messages.length - 1 && !msg.thinking && !msg.toolCalls ? (
+                            <div className={msgStyles.thinkingContainer}>
+                              <div className={msgStyles.thinkingDot} />
+                              <div className={msgStyles.thinkingDot} />
+                              <div className={msgStyles.thinkingDot} />
+                              <span className={msgStyles.thinkingText}>Thinking...</span>
+                            </div>
+                          ) : null
+                        )}
+                      </>
                     ) : (
                       msg.content
                     )}
