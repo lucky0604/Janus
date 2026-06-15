@@ -99,7 +99,9 @@
 
   /* ---- Spacing ---- */
   --space-1: 4px;
+  --space-1q: 6px;
   --space-2: 8px;
+  --space-2q: 10px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 20px;
