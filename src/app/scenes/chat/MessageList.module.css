@@ -594,6 +594,11 @@
   background: var(--color-bg-primary);
 }
 
+.toolError {
+  border-color: var(--color-error);
+  background: rgba(239, 68, 68, 0.06);
+}
+
 .toolHeader {
   display: flex;
   align-items: center;

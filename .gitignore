@@ -26,6 +26,7 @@ Thumbs.db
 .codegraph/
 .omo/
 .cursor/
+.opencode/
 
 # Generated design artifacts (not source code)
 agent_flow/
