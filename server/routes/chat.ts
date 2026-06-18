@@ -3,7 +3,8 @@ import { executeDialogTurn } from '../engine/agent-loop';
 import { toolRegistry } from '../tools/registry';
 import { agentRegistry } from '../agents/registry';
 import { OPERATING_MODES, compositeId } from '../agents/config';
-import { saveSession, loadSession } from '../persistence/session-store';
+import { saveSession, loadSession, getSessionMetadata, shouldUpgradeName, updateSessionName } from '../persistence/session-store';
+import { generateTitle } from '../persistence/title-generator';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -218,11 +219,22 @@ export async function handleChatStream(
             push(event);
             doneEmitted = true;
 
-            // Persist session on done
             const doneData = event.data as { reason: string; messages?: Message[] };
             if (doneData.messages) {
               try {
-                await saveSession(sessionId, doneData.messages, compositeKey);
+                await saveSession(sessionId, doneData.messages, compositeKey, resolvedPath);
+
+                const meta = await getSessionMetadata(sessionId);
+                if (meta && shouldUpgradeName(meta) && doneData.messages.some((m) => m.role === 'assistant')) {
+                  const finalMessages = doneData.messages;
+                  generateTitle(finalMessages, { apiKey, baseUrl, modelName })
+                    .then((title) => {
+                      if (title) {
+                        return updateSessionName(sessionId, title, 'llm');
+                      }
+                    })
+                    .catch(() => {});
+                }
               } catch {
                 // Persistence failure should not break the stream
               }

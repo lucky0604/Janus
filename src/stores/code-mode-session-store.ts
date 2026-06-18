@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Message } from '../../shared/types';
 import { useProjectStore } from './project-store';
+import { useChatStore } from './chat-store';
 
 export interface CodeModeToolCall {
   id: string;
@@ -509,6 +510,29 @@ export const useCodeModeSessionStore = create<CodeModeSessionState>((set, get) =
       }),
     });
     set({ sessionListVersion: get().sessionListVersion + 1 });
+
+    const hasUserAndAssistant =
+      messages.some((m) => m.role === 'user') &&
+      messages.some((m) => m.role === 'assistant' && m.content.trim());
+
+    if (hasUserAndAssistant) {
+      const { apiKey, baseUrl, modelName } = useChatStore.getState();
+      if (apiKey) {
+        fetch(`/api/sessions/${id}/regenerate-title`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey,
+            baseUrl: baseUrl?.trim() || undefined,
+            modelName: modelName?.trim() || undefined,
+          }),
+        })
+          .then(() => {
+            set({ sessionListVersion: get().sessionListVersion + 1 });
+          })
+          .catch(() => {});
+      }
+    }
   },
 
   deleteSession: async (sessionId) => {

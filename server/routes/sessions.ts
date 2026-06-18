@@ -6,7 +6,11 @@ import {
   loadSession,
   listSessions,
   upsertSession,
+  getSessionMetadata,
+  shouldUpgradeName,
+  updateSessionName,
 } from '../persistence/session-store';
+import { generateTitle } from '../persistence/title-generator';
 import { readBodyRaw } from '../utils/read-body';
 
 const UUID_V4_RE =
@@ -119,6 +123,70 @@ export async function handleSessionRoutes(
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ messages: session.messages, metadata: session.metadata }));
+      return;
+    }
+
+    if (
+      method === 'POST' &&
+      pathname.endsWith('/regenerate-title') &&
+      pathname.startsWith('/sessions/')
+    ) {
+      const sessionId = extractSessionId(pathname.replace(/\/regenerate-title$/, ''));
+      if (!sessionId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid session ID' }));
+        return;
+      }
+
+      const raw = await readBodyRaw(req);
+      const body = JSON.parse(raw || '{}') as {
+        apiKey?: string;
+        baseUrl?: string;
+        modelName?: string;
+        force?: boolean;
+      };
+
+      if (!body.apiKey) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'apiKey required' }));
+        return;
+      }
+
+      const meta = await getSessionMetadata(sessionId);
+      if (!meta) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session not found' }));
+        return;
+      }
+
+      if (!body.force && !shouldUpgradeName(meta)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ session: meta, skipped: true }));
+        return;
+      }
+
+      const session = await loadSession(sessionId);
+      if (!session || session.messages.length === 0) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Session has no messages yet' }));
+        return;
+      }
+
+      const title = await generateTitle(session.messages, {
+        apiKey: body.apiKey,
+        baseUrl: body.baseUrl,
+        modelName: body.modelName,
+      });
+
+      if (!title) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ session: meta, skipped: true, reason: 'no-title' }));
+        return;
+      }
+
+      const updated = await updateSessionName(sessionId, title, 'llm');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ session: updated || meta }));
       return;
     }
 
