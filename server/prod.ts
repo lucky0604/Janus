@@ -400,6 +400,7 @@ export function createJanusServer(distDir?: string, port?: number, promptsDir?: 
 // ---- Vite dev server integration ----
 
 export function configureApiRoutes(viteServer: { middlewares: { use: (path: string, handler: (req: IncomingMessage, res: ServerResponse) => void) => void } }) {
+  registerAllAgents(path.join(__dirname, 'agents', 'prompts'));
   viteServer.middlewares.use('/api', (req: IncomingMessage, res: ServerResponse) => {
     handleApiRequest(req, res).catch(() => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
