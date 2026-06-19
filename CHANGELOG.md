@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.7] - 2026-06-19
+
+### Fixed
+- AppImage 打包后启动白屏：修复 esbuild 将 npm 包（openai, better-sqlite3 等）打包进 ESM bundle 导致 Dynamic require 失败
+- `better-sqlite3` 升级至 12.11.1，兼容 Electron 42 的 V8 API 变更
+- `vite build` 默认 `emptyOutDir` 清空 tsc 服务端编译产物 → 设置 `emptyOutDir: false`
+- 导入路径错误：`../server/prod.js`（tsx 引导脚本）→ `../dist/server/prod.js`（编译产物）
+- Prompt 文件在打包后路径漂移 → `createJanusServer` 新增 `promptsDir` 参数，从 `app.getAppPath()` 传入
+- GPU vaapi/Vulkan 错误日志噪音 → 添加 `app.disableHardwareAcceleration()`
+- Dev 模式下 agent 注册缺失 → `configureApiRoutes` 中补充 `registerAllAgents` 调用
+- 版本号格式 `0.2.6.0` 修正为 semver 兼容的 `0.2.7`
+
+### Changed
+- esbuild 构建添加 `--packages=external`，服务端应用代码打包但 npm 依赖保持外部引用
+- 生产模式启动失败改为弹框提示，方便诊断
+
 ## [0.2.6.0] - 2026-06-18
 
 ### Added

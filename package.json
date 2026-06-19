@@ -1,7 +1,7 @@
 {
   "name": "janus",
   "private": true,
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Janus - AI Development Assistant",
   "author": "Janus Team <dev@janus.local>",
   "type": "module",
