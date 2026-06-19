@@ -18,6 +18,9 @@ export default defineConfig({
       '@shared': path.resolve(__dirname, 'shared'),
     },
   },
+  build: {
+    emptyOutDir: false, // Preserve tsc-compiled server/*.js files in dist/
+  },
   server: {
     port: 5173,
   },

@@ -29,9 +29,10 @@ import './tools/web-search';
 import './tools/web-fetch';
 import './tools/evolve';
 
-// Register agents from modes + roles
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-function registerAgent(
+
+function registerAgentWithDir(
+  promptsDir: string,
   id: string,
   name: string,
   description: string,
@@ -40,8 +41,8 @@ function registerAgent(
   capCategories: string[],
   iconKey: string,
 ): void {
-  if (agentRegistry.get(id)) return; // skip duplicates
-  const promptPath = path.resolve(__dirname, 'agents/prompts', `${promptFileName}.md`);
+  if (agentRegistry.get(id)) return;
+  const promptPath = path.join(promptsDir, `${promptFileName}.md`);
   let systemPrompt = '';
   try {
     systemPrompt = fs.readFileSync(promptPath, 'utf-8').trim();
@@ -49,10 +50,7 @@ function registerAgent(
     console.warn(`[Janus] Prompt file not found: ${promptPath}`);
   }
   agentRegistry.register({
-    id,
-    name,
-    description,
-    systemPrompt,
+    id, name, description, systemPrompt,
     tools,
     capabilities: capCategories.map((c) => ({ category: c as any, level: 4 })),
     iconKey,
@@ -60,34 +58,28 @@ function registerAgent(
   });
 }
 
-// Register Work Mode (mode-only, no role)
-for (const mode of OPERATING_MODES) {
-  if (mode.id === 'work') {
-    registerAgent(
-      'work',
-      mode.name,
-      mode.description,
-      promptFileKey('work'),              // work-mode
-      mode.tools,
-      mode.capabilities.map((c) => c.category),
-      mode.iconKey,
-    );
-  }
-}
+function registerAllAgents(promptsDir: string): void {
+  const register = (
+    id: string, name: string, description: string,
+    promptFileName: string, tools: string[], capCategories: string[], iconKey: string,
+  ) => registerAgentWithDir(promptsDir, id, name, description, promptFileName, tools, capCategories, iconKey);
 
-// Register Code Mode roles as composite agents
-for (const mode of OPERATING_MODES) {
-  if (mode.id !== 'code') continue;
-  for (const role of AGENT_ROLES) {
-    registerAgent(
-      compositeId(mode.id, role.id),       // code/agentic, code/plan, etc.
-      compositeName(mode.name, role.name), // "Code — Agentic"
-      role.description,
-      promptFileKey(mode.id, role.id),     // code-agentic-mode
-      mode.tools,
-      mode.capabilities.map((c) => c.category),
-      mode.iconKey,
-    );
+  for (const mode of OPERATING_MODES) {
+    if (mode.id === 'work') {
+      register('work', mode.name, mode.description,
+        promptFileKey('work'), mode.tools,
+        mode.capabilities.map((c) => c.category), mode.iconKey);
+    }
+  }
+
+  for (const mode of OPERATING_MODES) {
+    if (mode.id !== 'code') continue;
+    for (const role of AGENT_ROLES) {
+      register(compositeId(mode.id, role.id),
+        compositeName(mode.name, role.name), role.description,
+        promptFileKey(mode.id, role.id), mode.tools,
+        mode.capabilities.map((c) => c.category), mode.iconKey);
+    }
   }
 }
 
@@ -343,8 +335,11 @@ export interface JanusServer {
   close: () => Promise<void>;
 }
 
-export function createJanusServer(distDir?: string, port?: number): Promise<JanusServer> {
+export function createJanusServer(distDir?: string, port?: number, promptsDir?: string): Promise<JanusServer> {
   const DIST = distDir || path.resolve(__dirname, '..', 'dist');
+  const PROMPTS = promptsDir || path.join(__dirname, 'agents', 'prompts');
+
+  registerAllAgents(PROMPTS);
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || '/', `http://${req.headers.host}`);

@@ -8,6 +8,10 @@
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { spawn } from 'child_process';
+
+// Disable GPU acceleration to avoid vaapi/Vulkan errors on Linux.
+// The app is a developer tool and does not need hardware GPU rendering.
+app.disableHardwareAcceleration();
 import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -92,14 +96,17 @@ async function startServer(): Promise<number | undefined> {
 
   // Production: start embedded server
   const distDir = path.resolve(__dirname, '..', 'dist');
+  const promptsDir = path.join(app.getAppPath(), 'server', 'agents', 'prompts');
 
   try {
-    const { createJanusServer } = await import('../server/prod.js');
-    const janusServer = await createJanusServer(distDir);
+    const { createJanusServer } = await import('../dist/server/prod.js');
+    const janusServer = await createJanusServer(distDir, undefined, promptsDir);
     serverHandle = janusServer;
     return janusServer.port;
   } catch (err) {
-    console.error('[Janus] Failed to start embedded server:', err);
+    const msg = err instanceof Error ? (err.stack || err.message) : String(err);
+    console.error('[Janus] Failed to start embedded server:', msg);
+    dialog.showErrorBox('Janus Startup Error', `Failed to start embedded server:\n\n${msg}`);
     return undefined;
   }
 }
