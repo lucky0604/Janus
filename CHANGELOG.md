@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.6.0] - 2026-06-18
+
+### Added
+- Session auto-naming: conversations now get descriptive titles instead of "Session xxxxxxxx"
+- Two-layer naming: instant snippet from first message (20 chars), then LLM-generated title (3-6 words)
+- `nameSource` field on SessionMeta to track name provenance and prevent overwrites
+- `POST /api/sessions/{id}/regenerate-title` endpoint for code mode title generation
+
+### Fixed
+- `saveSession` no longer overwrites session names on every turn (now delegates to `upsertSession`)
+
 ## [0.2.5.0] - 2026-06-12
 
 ### Added

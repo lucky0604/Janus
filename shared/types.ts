@@ -171,6 +171,8 @@ export interface SessionMeta {
   turnCount: number;
   messageCount: number;
   projectPath?: string;
+  /** Name provenance: 'placeholder'|'snippet' upgradeable; 'llm'|'manual' terminal. */
+  nameSource?: 'placeholder' | 'snippet' | 'llm' | 'manual';
 }
 
 // ---- Project Management ----

@@ -71,35 +71,7 @@ export async function saveSession(
   agentType: string,
   workspacePath?: string
 ): Promise<void> {
-  const dir = path.join(SESSIONS_DIR, sessionId);
-  ensureDir(dir);
-
-  const metadata: SessionMeta = {
-    sessionId,
-    name: `Session ${sessionId.slice(0, 8)}`,
-    agentType,
-    createdAt: new Date().toISOString(),
-    lastActiveAt: new Date().toISOString(),
-    turnCount: 1,
-    messageCount: messages.length,
-    ...(workspacePath && { projectPath: normalizeWorkspacePath(workspacePath) }),
-  };
-
-  atomicWrite(path.join(dir, 'metadata.json'), JSON.stringify(metadata, null, 2));
-
-  const nextTurnIndex = getNextTurnIndex(dir);
-  const turn: DialogTurn = {
-    turnId: crypto.randomUUID(),
-    turnIndex: nextTurnIndex,
-    messages,
-    startTime: new Date().toISOString(),
-  };
-
-  const turnFile = path.join(dir, 'turns', `turn-${String(nextTurnIndex).padStart(4, '0')}.json`);
-  ensureDir(path.join(dir, 'turns'));
-  atomicWrite(turnFile, JSON.stringify(turn, null, 2));
-
-  await updateIndex(sessionId, metadata);
+  await upsertSession(sessionId, messages, agentType, workspacePath);
 }
 
 export async function loadSession(sessionId: string): Promise<{ messages: Message[]; metadata: SessionMeta } | null> {
@@ -200,12 +172,29 @@ export async function upsertSession(
     metadata.lastActiveAt = new Date().toISOString();
     metadata.messageCount = messages.length;
     metadata.agentType = agentType;
-    if (sessionName) metadata.name = sessionName;
     if (workspacePath) metadata.projectPath = normalizeWorkspacePath(workspacePath);
+
+    if (sessionName) {
+      metadata.name = sessionName;
+      metadata.nameSource = 'manual';
+    } else if (shouldUpgradeName(metadata) && messages.some((m) => m.role === 'user')) {
+      const snippet = deriveSessionName(messages, sessionId);
+      if (!isPlaceholderName(snippet)) {
+        metadata.name = snippet;
+        metadata.nameSource = 'snippet';
+      }
+    }
   } else {
+    const hasUser = messages.some((m) => m.role === 'user');
+    const derivedName = sessionName || deriveSessionName(messages, sessionId);
     metadata = {
       sessionId,
-      name: sessionName || deriveSessionName(messages, sessionId),
+      name: derivedName,
+      nameSource: sessionName
+        ? 'manual'
+        : hasUser && !isPlaceholderName(derivedName)
+          ? 'snippet'
+          : 'placeholder',
       agentType,
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
@@ -238,9 +227,23 @@ function deriveSessionName(messages: Message[], sessionId: string): string {
   const firstUser = messages.find((m) => m.role === 'user');
   if (firstUser?.content) {
     const trimmed = firstUser.content.trim().replace(/\s+/g, ' ');
-    return trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed;
+    return trimmed.length > 20 ? `${trimmed.slice(0, 20)}…` : trimmed;
   }
   return `Session ${sessionId.slice(0, 8)}`;
+}
+
+const PLACEHOLDER_NAME_RE = /^Session [0-9a-f]{8}$/;
+
+function isPlaceholderName(name: string | undefined): boolean {
+  return !name || PLACEHOLDER_NAME_RE.test(name);
+}
+
+export function shouldUpgradeName(meta: SessionMeta): boolean {
+  if (meta.nameSource === 'manual' || meta.nameSource === 'llm') return false;
+  if (isPlaceholderName(meta.name)) return true;
+  if (meta.nameSource === 'snippet') return true;
+  if (!meta.nameSource) return true;
+  return false;
 }
 
 async function removeFromIndex(sessionId: string): Promise<void> {
@@ -289,4 +292,45 @@ async function updateIndex(sessionId: string, metadata: SessionMeta): Promise<vo
   } finally {
     releaseIndexLock();
   }
+}
+
+export async function getSessionMetadata(sessionId: string): Promise<SessionMeta | null> {
+  const metadataPath = path.join(SESSIONS_DIR, sessionId, 'metadata.json');
+  if (!fs.existsSync(metadataPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as SessionMeta;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateSessionName(
+  sessionId: string,
+  name: string,
+  source: NonNullable<SessionMeta['nameSource']>,
+): Promise<SessionMeta | null> {
+  const dir = path.join(SESSIONS_DIR, sessionId);
+  const metadataPath = path.join(dir, 'metadata.json');
+  if (!fs.existsSync(metadataPath)) return null;
+
+  const cleaned = name.trim();
+  if (!cleaned) return null;
+
+  let metadata: SessionMeta;
+  try {
+    metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as SessionMeta;
+  } catch {
+    return null;
+  }
+
+  if (source !== 'manual' && (metadata.nameSource === 'manual' || metadata.nameSource === 'llm')) {
+    return metadata;
+  }
+
+  metadata.name = cleaned;
+  metadata.nameSource = source;
+  metadata.lastActiveAt = new Date().toISOString();
+  atomicWrite(metadataPath, JSON.stringify(metadata, null, 2));
+  await updateIndex(sessionId, metadata);
+  return metadata;
 }

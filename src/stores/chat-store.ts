@@ -302,6 +302,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
               case 'done':
                 set({ isStreaming: false });
+                useSessionStore.getState().refreshSessions();
+                setTimeout(() => {
+                  useSessionStore.getState().refreshSessions();
+                }, 3000);
                 return;
               case 'memory_recall': {
                 const mr = event.data as SSEMemoryRecall;

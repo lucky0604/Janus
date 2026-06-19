@@ -9,6 +9,7 @@ import { PtyDrawer } from './PtyDrawer';
 import { OnboardingDashboard } from './OnboardingDashboard';
 import { ProjectSidebar } from './ProjectSidebar';
 import { CodeModeHeader } from './CodeModeHeader';
+import { ThinkingBlock, ToolEventBlock, ProgressBlock } from './CodeModeMessageBlocks';
 import { applyRelayToolEvent } from './relay-tool-events';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
@@ -19,7 +20,7 @@ export function CodeModeScene() {
   const { projects, activeProjectId } = useProjectStore();
   const {
     activeSessionId,
-    messages,
+    sessionCache,
     appendExchange,
     switchToProject,
     isSessionExecuting,
@@ -28,6 +29,14 @@ export function CodeModeScene() {
   const initializedProjectIdRef = useRef<string | null>(null);
   const toolsCacheRef = useRef(new Map<string, ToolCardData[]>());
   const [tools, setTools] = useStateTools(activeSessionId, toolsCacheRef);
+
+  // Derive messages from the session cache keyed by activeSessionId.
+  // This is the single source of truth — immune to async race conditions
+  // where the store's top-level `messages` field could temporarily lag
+  // behind an activeSessionId change.
+  const messages = activeSessionId
+    ? (sessionCache[activeSessionId] ?? [])
+    : [];
 
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
   const isThinking = activeSessionId ? isSessionExecuting(activeSessionId) : false;
@@ -74,7 +83,7 @@ export function CodeModeScene() {
     </div>
   ) : (
     <>
-      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+      <div key={activeSessionId ?? '__none__'} ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
         <div style={{ maxWidth: '720px', margin: '0 auto' }}>
           {messages.length === 0 ? (
             <div className={emptyStyles.emptyState} style={{ minHeight: '240px' }}>
@@ -105,20 +114,38 @@ export function CodeModeScene() {
                   )}
                   <div className={msgStyles.content}>
                     {msg.role === 'assistant' ? (
-                      msg.content ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                          {msg.content}
-                        </ReactMarkdown>
-                      ) : (
-                        isThinking && i === messages.length - 1 ? (
-                          <div className={msgStyles.thinkingContainer}>
-                            <div className={msgStyles.thinkingDot} />
-                            <div className={msgStyles.thinkingDot} />
-                            <div className={msgStyles.thinkingDot} />
-                            <span className={msgStyles.thinkingText}>Thinking...</span>
+                      <>
+                        {/* Inline thinking block */}
+                        {msg.thinking && <ThinkingBlock text={msg.thinking} />}
+
+                        {/* Inline progress logs */}
+                        {msg.progress && msg.progress.length > 0 && <ProgressBlock logs={msg.progress} />}
+
+                        {/* Inline tool call cards */}
+                        {msg.toolCalls && msg.toolCalls.length > 0 && (
+                          <div style={{ margin: '4px 0' }}>
+                            {msg.toolCalls.map((tc) => (
+                              <ToolEventBlock key={tc.id} tool={tc} />
+                            ))}
                           </div>
-                        ) : null
-                      )
+                        )}
+
+                        {/* Main text content */}
+                        {msg.content ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        ) : (
+                          isThinking && i === messages.length - 1 && !msg.thinking && !msg.toolCalls ? (
+                            <div className={msgStyles.thinkingContainer}>
+                              <div className={msgStyles.thinkingDot} />
+                              <div className={msgStyles.thinkingDot} />
+                              <div className={msgStyles.thinkingDot} />
+                              <span className={msgStyles.thinkingText}>Thinking...</span>
+                            </div>
+                          ) : null
+                        )}
+                      </>
                     ) : (
                       msg.content
                     )}

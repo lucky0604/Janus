@@ -149,7 +149,7 @@
 .promptIcon {
   font-size: 16px;
   line-height: 1;
-  padding: var(--space-1.5);
+  padding: var(--space-1q);
   background: var(--color-bg-surface);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
