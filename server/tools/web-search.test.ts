@@ -128,3 +128,63 @@ describe('web_search: Bing fallback', () => {
     expect(result.results).toHaveLength(0);
   });
 });
+
+describe('web_search: bingSearch error paths', () => {
+  beforeEach(() => {
+    mockGet.mockReset();
+  });
+
+  it('rejects on HTTP >=400', async () => {
+    mockGet.mockImplementationOnce((_url: unknown, _opts: unknown, cb: (res: unknown) => void) => {
+      cb({ statusCode: 403, on: vi.fn() });
+      return { on: vi.fn(), destroy: vi.fn() };
+    });
+
+    const { bingSearch } = await import('./web-search');
+    await expect(bingSearch('query', 5)).rejects.toThrow('Bing HTTP 403');
+  });
+
+  it('rejects on network error', async () => {
+    mockGet.mockImplementationOnce(() => {
+      const req = { on: vi.fn(), destroy: vi.fn() };
+      setImmediate(() => {
+        const errorCb = req.on.mock.calls.find(([e]: [string]) => e === 'error')?.[1];
+        if (errorCb) errorCb(new Error('ENOTFOUND'));
+      });
+      return req;
+    });
+
+    const { bingSearch } = await import('./web-search');
+    await expect(bingSearch('query', 5)).rejects.toThrow('ENOTFOUND');
+  });
+
+  it('rejects on timeout', async () => {
+    mockGet.mockImplementationOnce(() => {
+      const req = { on: vi.fn(), destroy: vi.fn() };
+      setImmediate(() => {
+        const timeoutCb = req.on.mock.calls.find(([e]: [string]) => e === 'timeout')?.[1];
+        if (timeoutCb) timeoutCb();
+      });
+      return req;
+    });
+
+    const { bingSearch } = await import('./web-search');
+    await expect(bingSearch('query', 5)).rejects.toThrow('Bing request timed out');
+  });
+
+  it('rejects on stream error', async () => {
+    mockGet.mockImplementationOnce((_url: unknown, _opts: unknown, cb: (res: unknown) => void) => {
+      const res = {
+        statusCode: 200,
+        on: vi.fn((event: string, handler: (err: Error) => void) => {
+          if (event === 'error') setImmediate(() => handler(new Error('stream error')));
+        }),
+      };
+      cb(res);
+      return { on: vi.fn(), destroy: vi.fn() };
+    });
+
+    const { bingSearch } = await import('./web-search');
+    await expect(bingSearch('query', 5)).rejects.toThrow('stream error');
+  });
+});

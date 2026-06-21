@@ -3,9 +3,12 @@ import { toolRegistry } from './registry';
 import { parseHTML } from 'linkedom';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
+const BING_SEARCH_URL = 'https://cn.bing.com/search';
+const BING_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_MAX_RESULTS = 10;
 const MAX_RESULTS_CAP = 20;
 const FETCH_TIMEOUT_MS = 15_000;
+const SNIPPET_MAX_LENGTH = 500;
 
 interface SearchResult {
   title: string;
@@ -30,7 +33,7 @@ async function tavilySearch(query: string, maxResults: number): Promise<{ result
       include_answer: false,
       include_raw_content: false,
     }),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -45,7 +48,7 @@ async function tavilySearch(query: string, maxResults: number): Promise<{ result
   const results = (data.results || []).map((r) => ({
     title: r.title || '',
     url: r.url || '',
-    snippet: (r.content || '').slice(0, 500),
+    snippet: (r.content || '').slice(0, SNIPPET_MAX_LENGTH),
   }));
 
   return { results, engine: 'tavily' };
@@ -60,7 +63,7 @@ async function duckduckgoSearch(query: string, maxResults: number): Promise<{ re
       'User-Agent': 'Mozilla/5.0 (compatible; JanusBot/1.0)',
       'Accept': 'text/html',
     },
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -95,7 +98,7 @@ async function duckduckgoSearch(query: string, maxResults: number): Promise<{ re
     }
 
     const title = (anchor.textContent || '').trim();
-    const snippet = (snippetElements[i]?.textContent || '').trim().slice(0, 500);
+    const snippet = (snippetElements[i]?.textContent || '').trim().slice(0, SNIPPET_MAX_LENGTH);
 
     if (href && title) {
       results.push({ title, url: href, snippet });
@@ -108,12 +111,12 @@ async function duckduckgoSearch(query: string, maxResults: number): Promise<{ re
 // ─── Bing HTML fallback (works where DuckDuckGo is blocked, e.g. China) ──
 async function bingSearch(query: string, maxResults: number): Promise<{ results: SearchResult[]; engine: string }> {
   const encoded = encodeURIComponent(query);
-  const url = `https://cn.bing.com/search?q=${encoded}&setlang=en-us`;
+  const url = `${BING_SEARCH_URL}?q=${encoded}&setlang=en-us`;
 
   const html = await new Promise<string>((resolve, reject) => {
     const req = https.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': BING_USER_AGENT,
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9',
       },
@@ -146,7 +149,7 @@ async function bingSearch(query: string, maxResults: number): Promise<{ results:
 
     const title = (anchor?.textContent || '').trim();
     const href = anchor?.getAttribute('href') || '';
-    const snippet = (snippetEl?.textContent || '').trim().slice(0, 500);
+    const snippet = (snippetEl?.textContent || '').trim().slice(0, SNIPPET_MAX_LENGTH);
 
     if (href && title) {
       results.push({ title, url: href, snippet });
@@ -162,7 +165,7 @@ export { tavilySearch, duckduckgoSearch, bingSearch };
 // ─── Tool registration ────────────────────────────────────────────────
 toolRegistry.register({
   name: 'web_search',
-      description: 'Search the web. Uses Tavily API if TAVILY_API_KEY is set, otherwise falls back to DuckDuckGo, then Bing (free, no key needed). Returns titles, URLs, and snippets.',
+  description: 'Search the web. Uses Tavily API if TAVILY_API_KEY is set, otherwise falls back to DuckDuckGo, then Bing (free, no key needed). Returns titles, URLs, and snippets.',
   parameters: {
     type: 'object',
     properties: {

@@ -90,6 +90,15 @@ export function resolveToolPath(requestedPath: string, workspaceRoot?: string): 
 export function validatePath(requestedPath: string, workspaceRoot: string): string {
   const resolved = path.resolve(workspaceRoot, requestedPath);
 
+  // Block sensitive absolute prefixes (applied post-resolution so
+  // relative paths resolved against any workspace root are covered)
+  if (BLOCKED_ABSOLUTE_PREFIXES.some((p) => resolved.startsWith(p))) {
+    throw new PathError(`Path not allowed: ${resolved}`);
+  }
+  if (SENSITIVE_PATH_PATTERNS.some((p) => p.test(resolved))) {
+    throw new PathError(`Path not allowed (sensitive): ${resolved}`);
+  }
+
   // Resolve symlinks to prevent symlink escape
   let realPath: string;
   try {
