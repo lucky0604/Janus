@@ -114,6 +114,7 @@ async function bingSearch(query: string, maxResults: number): Promise<{ results:
   const url = `${BING_SEARCH_URL}?q=${encoded}&setlang=en-us`;
 
   const html = await new Promise<string>((resolve, reject) => {
+    let settled = false;
     const req = https.get(url, {
       headers: {
         'User-Agent': BING_USER_AGENT,
@@ -123,18 +124,27 @@ async function bingSearch(query: string, maxResults: number): Promise<{ results:
       timeout: FETCH_TIMEOUT_MS,
     }, (res) => {
       if (res.statusCode && res.statusCode >= 400) {
+        settled = true;
+        res.resume();
         reject(new Error(`Bing HTTP ${res.statusCode}`));
         return;
       }
       const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-      res.on('error', reject);
+      res.on('data', (chunk: Buffer) => {
+        if (!settled) chunks.push(chunk);
+      });
+      res.on('end', () => {
+        if (!settled) { settled = true; resolve(Buffer.concat(chunks).toString('utf-8')); }
+      });
+      res.on('error', (err) => {
+        if (!settled) { settled = true; req.destroy(); reject(err); }
+      });
     });
-    req.on('error', reject);
+    req.on('error', (err) => {
+      if (!settled) { settled = true; reject(err); }
+    });
     req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Bing request timed out'));
+      if (!settled) { settled = true; req.destroy(); reject(new Error('Bing request timed out')); }
     });
   });
 
@@ -198,7 +208,8 @@ toolRegistry.register({
           // Fall back to DuckDuckGo, then Bing
           try {
             result = await duckduckgoSearch(query, maxResults);
-          } catch {
+          } catch (ddgErr) {
+            console.error('DuckDuckGo fallback failed, trying Bing:', ddgErr);
             result = await bingSearch(query, maxResults);
           }
         } else {

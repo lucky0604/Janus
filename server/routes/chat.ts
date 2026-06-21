@@ -157,7 +157,7 @@ export async function handleChatStream(
 ): Promise<ReadableStream> {
   const { messages, sessionId, workspacePath, apiKey, baseUrl, modelName, mode, role } = req;
   const resolvedPath =
-    workspacePath.trim() ||
+    (workspacePath || '').trim() ||
     (process.env.JANUS_WORKSPACE || '').trim() ||
     process.cwd();
 

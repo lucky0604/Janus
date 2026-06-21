@@ -111,12 +111,28 @@ export function validatePath(requestedPath: string, workspaceRoot: string): stri
     try {
       realPath = path.join(fs.realpathSync(dir), base);
     } catch {
-      throw new PathError('Path outside workspace');
+      throw new PathError('Path outside workspace or parent does not exist');
     }
   }
 
+  // Re-check sensitive patterns on the symlink-resolved real path.
+  // A symlink named 'temp_link' could point to '.ssh/id_rsa' inside
+  // the workspace, bypassing the pre-resolution check.
+  if (BLOCKED_ABSOLUTE_PREFIXES.some((p) => realPath.startsWith(p))) {
+    throw new PathError(`Path not allowed: ${resolved}`);
+  }
+  if (SENSITIVE_PATH_PATTERNS.some((p) => p.test(realPath))) {
+    throw new PathError(`Path not allowed (sensitive): ${resolved}`);
+  }
+
   const normalized = path.normalize(realPath);
-  const rootReal = fs.realpathSync(path.resolve(workspaceRoot));
+
+  let rootReal: string;
+  try {
+    rootReal = fs.realpathSync(path.resolve(workspaceRoot));
+  } catch {
+    throw new PathError('Workspace root does not exist');
+  }
 
   // Must be within workspace (with trailing sep to prevent prefix matching)
   if (!normalized.startsWith(rootReal + path.sep) && normalized !== rootReal) {

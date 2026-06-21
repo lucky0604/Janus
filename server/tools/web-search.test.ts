@@ -136,7 +136,7 @@ describe('web_search: bingSearch error paths', () => {
 
   it('rejects on HTTP >=400', async () => {
     mockGet.mockImplementationOnce((_url: unknown, _opts: unknown, cb: (res: unknown) => void) => {
-      cb({ statusCode: 403, on: vi.fn() });
+      cb({ statusCode: 403, on: vi.fn(), resume: vi.fn() });
       return { on: vi.fn(), destroy: vi.fn() };
     });
 
