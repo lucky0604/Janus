@@ -69,4 +69,14 @@ contextBridge.exposeInMainWorld('janusNative', {
       ipcRenderer.removeListener(channel, listener);
     };
   },
+
+  /** Load all persisted settings from the main-process settings file */
+  getSettings: (): Promise<Record<string, string>> => {
+    return ipcRenderer.invoke('settings:getAll');
+  },
+
+  /** Persist a single setting key-value pair to the main-process settings file */
+  setSetting: (key: string, value: string): Promise<boolean> => {
+    return ipcRenderer.invoke('settings:set', key, value);
+  },
 });

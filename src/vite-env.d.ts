@@ -16,6 +16,8 @@ interface JanusNativeBridge {
   ptyKill: (args: { id: string }) => Promise<{ success: boolean; error?: string }>;
   onPtyData: (id: string, callback: (data: string) => void) => () => void;
   onPtyExit: (id: string, callback: (exitCode: { exitCode: number; signal?: number }) => void) => () => void;
+  getSettings: () => Promise<Record<string, string>>;
+  setSetting: (key: string, value: string) => Promise<boolean>;
 }
 
 interface Window {

@@ -26,6 +26,7 @@ interface ChatState {
   switchAgent: (agentId: string) => void;
   resetSession: () => void;
   respondToApproval: (approvalId: string, approved: boolean) => Promise<void>;
+  hydrateSettings: () => Promise<void>;
 }
 
 let abortController: AbortController | null = null;
@@ -460,21 +461,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setApiKey: (key: string) => {
     localStorage.setItem('janus_api_key', key);
+    window.janusNative?.setSetting?.('janus_api_key', key);
     set({ apiKey: key, errorMessage: null });
   },
 
   setBaseUrl: (url: string) => {
     localStorage.setItem('janus_base_url', url);
+    window.janusNative?.setSetting?.('janus_base_url', url);
     set({ baseUrl: url });
   },
 
   setModelName: (model: string) => {
     localStorage.setItem('janus_model', model);
+    window.janusNative?.setSetting?.('janus_model', model);
     set({ modelName: model });
   },
 
   setWorkspacePath: (path: string) => {
     localStorage.setItem('janus_workspace', path);
+    window.janusNative?.setSetting?.('janus_workspace', path);
     set({ workspacePath: path });
   },
 
@@ -550,6 +555,44 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({
         errorMessage: err instanceof Error ? err.message : 'Failed to submit approval',
       });
+    }
+  },
+
+  /**
+   * Hydrate settings from Electron's file-based persistence (IPC bridge).
+   * Called once on app startup. Falls back to localStorage when running in
+   * a regular browser (dev mode without Electron preload bridge).
+   */
+  hydrateSettings: async () => {
+    if (typeof window === 'undefined' || !window.janusNative?.getSettings) {
+      return;
+    }
+    try {
+      const nativeSettings = await window.janusNative.getSettings();
+      const updates: Partial<ChatState> = {};
+      if (nativeSettings.janus_api_key) {
+        updates.apiKey = nativeSettings.janus_api_key;
+      }
+      if (nativeSettings.janus_base_url) {
+        updates.baseUrl = nativeSettings.janus_base_url;
+      }
+      if (nativeSettings.janus_model) {
+        updates.modelName = nativeSettings.janus_model;
+      }
+      if (nativeSettings.janus_workspace) {
+        updates.workspacePath = nativeSettings.janus_workspace;
+      }
+      if (Object.keys(updates).length > 0) {
+        set(updates as Partial<ChatState>);
+        // Sync back to localStorage so it stays consistent within this session
+        for (const [key, value] of Object.entries(updates)) {
+          if (typeof value === 'string') {
+            localStorage.setItem(key, value);
+          }
+        }
+      }
+    } catch {
+      // IPC unavailable — keep localStorage values
     }
   },
 }));

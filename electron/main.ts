@@ -8,6 +8,7 @@
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { spawn } from 'child_process';
+import fs from 'fs';
 
 // Disable GPU acceleration to avoid vaapi/Vulkan errors on Linux.
 // The app is a developer tool and does not need hardware GPU rendering.
@@ -165,6 +166,50 @@ ipcMain.on('get-version', (event) => {
 // Menu action channel — currently no menu sends these, but the preload
 // bridge exposes the listener for future use.
 // ipcMain.send('menu-action', action) will trigger onMenuAction in renderer.
+
+// ---- Settings persistence (IPC → file-based at userData/settings.json) ----
+// localStorage in the renderer is origin-scoped, which breaks when the embedded
+// server binds to a random port on each launch (server.listen(0)). We use the
+// Electron main process userData directory for cross-launch persistence.
+
+function getSettingsPath(): string {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function loadSettingsFile(): Record<string, string> {
+  try {
+    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function saveSettingsFile(data: Record<string, string>): void {
+  const settingsPath = getSettingsPath();
+  const dir = path.dirname(settingsPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  // Atomic write: write to temp file then rename
+  const tmp = settingsPath + '.tmp.' + Date.now();
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
+  fs.renameSync(tmp, settingsPath);
+}
+
+ipcMain.handle('settings:getAll', () => {
+  return loadSettingsFile();
+});
+
+ipcMain.handle('settings:set', (_event, key: string, value: string) => {
+  if (typeof key !== 'string' || typeof value !== 'string') {
+    return false;
+  }
+  const settings = loadSettingsFile();
+  settings[key] = value;
+  saveSettingsFile(settings);
+  return true;
+});
 
 // ---- App lifecycle ----
 
