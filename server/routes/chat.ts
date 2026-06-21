@@ -158,7 +158,8 @@ export async function handleChatStream(
   const { messages, sessionId, workspacePath, apiKey, baseUrl, modelName, mode, role } = req;
   const resolvedPath =
     workspacePath.trim() ||
-    (process.env.JANUS_WORKSPACE || '').trim();
+    (process.env.JANUS_WORKSPACE || '').trim() ||
+    process.cwd();
 
   // Backward compat: prefer mode+role, fall back to agentId
   let tools: ToolDefinition[];

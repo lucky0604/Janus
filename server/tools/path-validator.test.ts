@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveToolPath, PathError } from './path-validator';
+import { resolveToolPath } from './path-validator';
 
 describe('resolveToolPath', () => {
   it('accepts absolute paths without workspace', () => {
@@ -7,8 +7,12 @@ describe('resolveToolPath', () => {
     expect(resolved).toBeTruthy();
   });
 
-  it('rejects relative paths when workspace is empty', () => {
-    expect(() => resolveToolPath('src/foo.ts', '')).toThrow(PathError);
+  it('resolves relative paths against cwd when workspace is empty', () => {
+    // When no workspace is configured, fall back to process.cwd()
+    // so tools work out of the box in packaged AppImage builds.
+    const resolved = resolveToolPath('src/foo.ts', '');
+    expect(resolved.endsWith('src/foo.ts')).toBe(true);
+    expect(resolved.startsWith('/')).toBe(true);
   });
 
   it('resolves relative paths against workspace', () => {

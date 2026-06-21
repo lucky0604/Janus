@@ -78,9 +78,10 @@ export function resolveToolPath(requestedPath: string, workspaceRoot?: string): 
 
   const root = workspaceRoot?.trim();
   if (!root) {
-    throw new PathError(
-      'Relative path needs a workspace in Settings, or use an absolute path from the user request.',
-    );
+    // No workspace configured — fall back to current working directory.
+    // This prevents tools from failing when run from a packaged AppImage
+    // where the user hasn't explicitly set a workspace path.
+    return validatePath(trimmed, process.cwd());
   }
 
   return validatePath(trimmed, root);

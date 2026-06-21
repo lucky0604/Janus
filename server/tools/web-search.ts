@@ -1,9 +1,11 @@
+import https from 'https';
 import { toolRegistry } from './registry';
 import { parseHTML } from 'linkedom';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 const DEFAULT_MAX_RESULTS = 10;
 const MAX_RESULTS_CAP = 20;
+const FETCH_TIMEOUT_MS = 15_000;
 
 interface SearchResult {
   title: string;
@@ -103,13 +105,64 @@ async function duckduckgoSearch(query: string, maxResults: number): Promise<{ re
   return { results, engine: 'duckduckgo' };
 }
 
+// ─── Bing HTML fallback (works where DuckDuckGo is blocked, e.g. China) ──
+async function bingSearch(query: string, maxResults: number): Promise<{ results: SearchResult[]; engine: string }> {
+  const encoded = encodeURIComponent(query);
+  const url = `https://cn.bing.com/search?q=${encoded}&setlang=en-us`;
+
+  const html = await new Promise<string>((resolve, reject) => {
+    const req = https.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      timeout: FETCH_TIMEOUT_MS,
+    }, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`Bing HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Bing request timed out'));
+    });
+  });
+
+  const { document } = parseHTML(html);
+  const results: SearchResult[] = [];
+
+  const algoElements = document.querySelectorAll('.b_algo');
+  for (let i = 0; i < Math.min(algoElements.length, maxResults); i++) {
+    const el = algoElements[i];
+    const anchor = el.querySelector('h2 a');
+    const snippetEl = el.querySelector('.b_caption p, p');
+
+    const title = (anchor?.textContent || '').trim();
+    const href = anchor?.getAttribute('href') || '';
+    const snippet = (snippetEl?.textContent || '').trim().slice(0, 500);
+
+    if (href && title) {
+      results.push({ title, url: href, snippet });
+    }
+  }
+
+  return { results, engine: 'bing' };
+}
+
 // Exported for testing
-export { tavilySearch, duckduckgoSearch };
+export { tavilySearch, duckduckgoSearch, bingSearch };
 
 // ─── Tool registration ────────────────────────────────────────────────
 toolRegistry.register({
   name: 'web_search',
-  description: 'Search the web. Uses Tavily API if TAVILY_API_KEY is set, otherwise falls back to DuckDuckGo (free, no key needed). Returns titles, URLs, and snippets.',
+      description: 'Search the web. Uses Tavily API if TAVILY_API_KEY is set, otherwise falls back to DuckDuckGo, then Bing (free, no key needed). Returns titles, URLs, and snippets.',
   parameters: {
     type: 'object',
     properties: {
@@ -132,15 +185,19 @@ toolRegistry.register({
     );
 
     try {
-      // Try Tavily first, fall back to DuckDuckGo
+      // Try Tavily first, fall back to DuckDuckGo, then Bing
       let result: { results: SearchResult[]; engine: string };
       try {
         result = await tavilySearch(query, maxResults);
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
         if (msg === 'NO_TAVILY_KEY' || msg.includes('Tavily')) {
-          // Fall back to DuckDuckGo
-          result = await duckduckgoSearch(query, maxResults);
+          // Fall back to DuckDuckGo, then Bing
+          try {
+            result = await duckduckgoSearch(query, maxResults);
+          } catch {
+            result = await bingSearch(query, maxResults);
+          }
         } else {
           throw err;
         }
