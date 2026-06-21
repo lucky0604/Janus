@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.8] - 2026-06-21
+
+### Added
+- Bing search as third fallback engine for `web_search` tool (works where DuckDuckGo is blocked, e.g. China). Falls through: Tavily → DuckDuckGo → Bing.
+
+### Changed
+- `resolveToolPath` now falls back to `process.cwd()` when no workspace is configured, so file tools work out of the box in packaged AppImage builds without manual workspace setup.
+
+### Fixed
+- `workspacePath.trim()` crashes when the client omits `workspacePath` from the JSON request body.
+- Sensitive path patterns (`.ssh`, `.aws`, `.gpg`, credentials) now checked on relative paths resolved against any workspace root, not just absolute paths.
+- Symlink escape: sensitive path patterns re-checked after symlink resolution to prevent bypass via symlinks within workspace.
+- Stale `main.js` build artifact (55k lines of bundled JS) removed from repo root, added to `.gitignore`.
+
+### Security
+- `validatePath()` now applies `BLOCKED_ABSOLUTE_PREFIXES` and `SENSITIVE_PATH_PATTERNS` checks for parity with `resolveAbsolutePath()`.
+- Bing search HTTP error path properly destroys connection to prevent socket leaks.
+
 ## [0.2.7] - 2026-06-19
 
 ### Fixed
