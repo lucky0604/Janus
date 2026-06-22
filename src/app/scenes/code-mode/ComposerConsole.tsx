@@ -5,6 +5,18 @@ import { useCodeModeStore } from '../../../stores/app-stores';
 import type { CliDetectionResult, CliToolId } from '../../../../shared/types';
 import styles from './ComposerConsole.module.css';
 
+function getPreviousCliFromMessages(sessionId: string): CliToolId | undefined {
+  const store = useCodeModeSessionStore.getState();
+  const messages = store.sessionCache[sessionId] ?? store.messages;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'assistant' && msg.cliId) {
+      return msg.cliId;
+    }
+  }
+  return undefined;
+}
+
 function useIsNarrow(breakpoint = 768): boolean {
   const [narrow, setNarrow] = useState(
     typeof window !== 'undefined' ? window.innerWidth < breakpoint : false,
@@ -89,15 +101,24 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       .then((r) => r.json())
       .then((data: { clis: CliDetectionResult[] }) => {
         setCliResults(data.clis);
-        const available = data.clis.find((c) => c.available);
-        if (available) {
-          setActiveCli(available.id);
-          setActiveModel(available.defaultModel ?? available.models?.[0] ?? '');
+        // Only set defaults if no CLI is already selected (preserves user choice)
+        if (!activeCli) {
+          const available = data.clis.find((c) => c.available);
+          if (available) {
+            setActiveCli(available.id);
+            setActiveModel(available.defaultModel ?? available.models?.[0] ?? '');
+          }
+        } else {
+          // Restore model list for the already-selected CLI
+          const current = data.clis.find((c) => c.id === activeCli);
+          if (current && !activeModel) {
+            setActiveModel(current.defaultModel ?? current.models?.[0] ?? '');
+          }
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [setActiveCli, setActiveModel]);
+  }, [setActiveCli, setActiveModel, activeCli, activeModel]);
 
   const handleCliChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value as CliToolId;
@@ -137,6 +158,9 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
     const sessionId = useCodeModeSessionStore.getState().activeSessionId;
     if (!sessionId) return;
 
+    // Capture before onSend appendExchange adds a new assistant with activeCli
+    const previousCli = getPreviousCliFromMessages(sessionId);
+
     setInput('');
     setSessionExecuting(sessionId, true);
     onSend?.(prompt);
@@ -155,6 +179,7 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
           model: activeModel,
           workspacePath: activeProject.path,
           sessionId,
+          previousCli,
         }),
         signal: abort.signal,
       });

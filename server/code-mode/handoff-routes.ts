@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { readHandoff, writeHandoff, deleteHandoff, createHandoffContext, ensureGitignore } from './handoff-helper';
-import { stashActiveChanges, applyStashedChanges } from './git-syncer';
+import { stashActiveChanges, applyStashedChanges, isGitRepo } from './git-syncer';
 import { detectAllClis } from './cli-registry';
 import type { CliToolId, HandoffTodo } from '../../shared/types';
 
@@ -44,12 +44,16 @@ export function handleCodeModeRoutes(
           todos?: string[];
         };
 
-        ensureGitignore(workspacePath);
-
         const todoItems: HandoffTodo[] = (todos ?? []).map((t) => ({
           text: t,
           completed: false,
         }));
+
+        const isGit = isGitRepo(workspacePath);
+
+        if (isGit) {
+          ensureGitignore(workspacePath);
+        }
 
         // Phase 1: Write handoff metadata BEFORE destructive git ops
         const ctx = createHandoffContext({
@@ -63,12 +67,14 @@ export function handleCodeModeRoutes(
         });
         writeHandoff(workspacePath, ctx);
 
-        // Phase 2: Execute git stash + hard reset
-        const stashResult = stashActiveChanges(workspacePath);
-        ctx.stashHash = stashResult.stashHash;
-        ctx.commitSha = stashResult.commitSha;
-        ctx.timestamp = new Date().toISOString();
-        writeHandoff(workspacePath, ctx);
+        // Phase 2: Execute git stash + hard reset (skip for non-git projects)
+        if (isGit) {
+          const stashResult = stashActiveChanges(workspacePath);
+          ctx.stashHash = stashResult.stashHash;
+          ctx.commitSha = stashResult.commitSha;
+          ctx.timestamp = new Date().toISOString();
+          writeHandoff(workspacePath, ctx);
+        }
 
         json(res, 200, { success: true, handoff: ctx });
       } catch (err) {
@@ -90,7 +96,7 @@ export function handleCodeModeRoutes(
         const updates = JSON.parse(body) as { todos?: HandoffTodo[] };
         if (updates.todos) handoff.todos = updates.todos;
 
-        if (handoff.stashHash) {
+        if (handoff.stashHash && isGitRepo(workspacePath)) {
           const result = applyStashedChanges(
             workspacePath,
             handoff.stashHash,

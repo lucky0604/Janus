@@ -175,3 +175,37 @@ export function getCliConfig(id: CliToolId): CliToolConfig | undefined {
 export function getAvailableClis(): CliToolConfig[] {
   return CLI_CONFIGS.filter((config) => whichBinary(config.binaryName) !== null);
 }
+
+/**
+ * Check if a model is compatible with a given CLI.
+ * Known incompatible: Codex + DeepSeek (requires Responses API, DeepSeek only has Chat Completions)
+ */
+export interface CompatibilityCheck {
+  compatible: boolean;
+  warning?: string;
+  suggestion?: string;
+}
+
+const INCOMPATIBLE_PATTERNS: Array<{
+  cli: CliToolId;
+  modelPattern: RegExp;
+  warning: string;
+  suggestion: string;
+}> = [
+  {
+    cli: 'codex',
+    modelPattern: /deepseek/i,
+    warning: 'Codex CLI requires the Responses API, but DeepSeek only supports Chat Completions. This will result in 404 errors.',
+    suggestion: 'Use OpenCode with DeepSeek models, or configure a local codex-bridge proxy.',
+  },
+];
+
+export function checkModelCompatibility(cliId: CliToolId, model: string): CompatibilityCheck {
+  for (const rule of INCOMPATIBLE_PATTERNS) {
+    if (rule.cli === cliId && rule.modelPattern.test(model)) {
+      return { compatible: false, warning: rule.warning, suggestion: rule.suggestion };
+    }
+  }
+  return { compatible: true };
+}
+

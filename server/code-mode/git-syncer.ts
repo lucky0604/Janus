@@ -44,6 +44,10 @@ export interface ApplyResult {
  * using `git stash create` to avoid touching the reflog.
  * Then hard-reset + clean to leave a pristine tree.
  */
+export function isGitRepo(cwd: string): boolean {
+  return git('rev-parse --is-inside-work-tree', cwd).success;
+}
+
 export function stashActiveChanges(cwd: string): StashResult {
   const commitSha = git('rev-parse HEAD', cwd);
   if (!commitSha.success) {

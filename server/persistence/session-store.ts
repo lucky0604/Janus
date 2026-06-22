@@ -47,23 +47,6 @@ function releaseIndexLock(): void {
   }
 }
 
-function getNextTurnIndex(sessionDir: string): number {
-  const turnsDir = path.join(sessionDir, 'turns');
-  if (!fs.existsSync(turnsDir)) return 0;
-
-  const files = fs.readdirSync(turnsDir).filter((f) => /^turn-\d{4}\.json$/.test(f));
-  if (files.length === 0) return 0;
-
-  let maxIndex = -1;
-  for (const file of files) {
-    const match = file.match(/^turn-(\d{4})\.json$/);
-    if (match) {
-      const idx = parseInt(match[1], 10);
-      if (idx > maxIndex) maxIndex = idx;
-    }
-  }
-  return maxIndex + 1;
-}
 
 export async function saveSession(
   sessionId: string,
@@ -206,18 +189,31 @@ export async function upsertSession(
 
   atomicWrite(metadataPath, JSON.stringify(metadata, null, 2));
 
-  const nextTurnIndex = getNextTurnIndex(dir);
+  const turnsDir = path.join(dir, 'turns');
+  ensureDir(turnsDir);
+
+  // Snapshot mode: Code Mode (and similar callers) always send the complete
+  // message array. Writing incremental turn files causes duplication on load.
+  // Fix: overwrite a single turn-0000 snapshot, removing any stale turn files.
+  const existingTurns = fs.existsSync(turnsDir)
+    ? fs.readdirSync(turnsDir).filter((f) => /^turn-\d{4}\.json$/.test(f))
+    : [];
+  for (const old of existingTurns) {
+    if (old !== 'turn-0000.json') {
+      try { fs.unlinkSync(path.join(turnsDir, old)); } catch { /* ignore */ }
+    }
+  }
+
   const turn: DialogTurn = {
     turnId: crypto.randomUUID(),
-    turnIndex: nextTurnIndex,
+    turnIndex: 0,
     messages,
     startTime: metadata.createdAt,
     endTime: new Date().toISOString(),
   };
+  metadata.turnCount = 1;
 
-  const turnsDir = path.join(dir, 'turns');
-  ensureDir(turnsDir);
-  atomicWrite(path.join(turnsDir, `turn-${String(nextTurnIndex).padStart(4, '0')}.json`), JSON.stringify(turn, null, 2));
+  atomicWrite(path.join(turnsDir, 'turn-0000.json'), JSON.stringify(turn, null, 2));
 
   await updateIndex(sessionId, metadata);
   return metadata;

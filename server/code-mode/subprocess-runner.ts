@@ -2,7 +2,7 @@ import { spawn, type ChildProcess, type StdioOptions } from 'child_process';
 import { EventEmitter } from 'events';
 
 export interface NdjsonEvent {
-  type: 'text_delta' | 'tool_call' | 'tool_result' | 'progress' | 'error' | 'exit';
+  type: 'text_delta' | 'text_final' | 'tool_call' | 'tool_result' | 'progress' | 'error' | 'exit' | 'session_meta';
   data: unknown;
   raw?: string;
 }
@@ -22,24 +22,26 @@ export function parseCliJsonEvent(obj: Record<string, unknown>): NdjsonEvent | n
   const t = obj.type as string | undefined;
 
   // ── Claude Code stream-json: assistant message with content blocks
+  // Marked as 'text_final' because stream-json always delivers content via
+  // content_block_delta first; this event is the assembled duplicate.
   if (t === 'assistant' && typeof obj.message === 'object' && obj.message) {
     const msg = obj.message as Record<string, unknown>;
     if (msg.type === 'text' && typeof msg.text === 'string') {
-      return { type: 'text_delta', data: { text: msg.text } };
+      return { type: 'text_final', data: { text: msg.text } };
     }
     if (Array.isArray(msg.content)) {
       const texts = (msg.content as Record<string, unknown>[])
         .filter((c) => c.type === 'text' && typeof c.text === 'string')
         .map((c) => c.text as string);
       if (texts.length) {
-        return { type: 'text_delta', data: { text: texts.join('') } };
+        return { type: 'text_final', data: { text: texts.join('') } };
       }
     }
   }
 
-  // ── Claude Code: final result line
+  // ── Claude Code: final result line (duplicate of already-streamed content)
   if (t === 'result' && typeof obj.result === 'string' && obj.result.trim()) {
-    return { type: 'text_delta', data: { text: obj.result } };
+    return { type: 'text_final', data: { text: obj.result } };
   }
 
   // ── Anthropic API streaming: content_block_delta
@@ -66,10 +68,12 @@ export function parseCliJsonEvent(obj: Record<string, unknown>): NdjsonEvent | n
   }
 
   // ── Codex JSONL: item.completed with agent message or message content
+  // Marked text_final because the text was likely already streamed via
+  // response.output_text.delta events.
   if (t === 'item.completed' && typeof obj.item === 'object' && obj.item) {
     const item = obj.item as Record<string, unknown>;
     if (item.type === 'agent_message' && typeof item.text === 'string') {
-      return { type: 'text_delta', data: { text: item.text } };
+      return { type: 'text_final', data: { text: item.text } };
     }
     if (item.type === 'message' && Array.isArray(item.content)) {
       const parts = item.content as Record<string, unknown>[];
@@ -77,7 +81,7 @@ export function parseCliJsonEvent(obj: Record<string, unknown>): NdjsonEvent | n
         .filter((c) => c.type === 'output_text' && typeof c.text === 'string')
         .map((c) => c.text as string);
       if (texts.length) {
-        return { type: 'text_delta', data: { text: texts.join('') } };
+        return { type: 'text_final', data: { text: texts.join('') } };
       }
     }
     if (item.type === 'error' && typeof item.message === 'string') {
@@ -158,6 +162,55 @@ export function parseCliJsonEvent(obj: Record<string, unknown>): NdjsonEvent | n
     return { type: 'tool_result', data: obj };
   }
 
+  // ── Codex flat format: {"type":"item.agent_message","content":"..."}
+  if (t === 'item.agent_message' && typeof obj.content === 'string') {
+    return { type: 'text_delta', data: { text: obj.content } };
+  }
+
+  // ── Codex newer method-based format
+  const method = obj.method as string | undefined;
+  if (method === 'item/agentMessage/delta') {
+    const params = obj.params as Record<string, unknown> | undefined;
+    if (params && typeof params.delta === 'string') {
+      return { type: 'text_delta', data: { text: params.delta } };
+    }
+  }
+  if (method === 'item/completed') {
+    const params = obj.params as Record<string, unknown> | undefined;
+    const item = params?.item as Record<string, unknown> | undefined;
+    if (item?.type === 'agentMessage' && typeof item.text === 'string') {
+      return { type: 'text_final', data: { text: item.text } };
+    }
+  }
+  if (method === 'turn/started' || method === 'turn/completed') {
+    return { type: 'progress', data: obj };
+  }
+
+  // ── Top-level error events (Codex reconnection failures, fatal stream errors)
+  if (t === 'error' && typeof obj.message === 'string') {
+    if (/^Reconnecting\.\.\./i.test(obj.message)) {
+      return { type: 'progress', data: obj };
+    }
+    return { type: 'error', data: { message: obj.message } };
+  }
+
+  // ── turn.failed → surface as error
+  if (t === 'turn.failed') {
+    const errObj = obj.error as Record<string, unknown> | undefined;
+    const msg = typeof errObj?.message === 'string' ? errObj.message : 'Turn failed';
+    return { type: 'error', data: { message: msg } };
+  }
+
+  // ── Session identity extraction (thread_id, session_id)
+  if (t === 'thread.started' && typeof obj.thread_id === 'string') {
+    return { type: 'session_meta', data: { cliSessionId: obj.thread_id, source: 'codex' } };
+  }
+
+  // Claude Code session identity: {"type":"system","subtype":"init","session_id":"..."}
+  if (t === 'system' && obj.subtype === 'init' && typeof obj.session_id === 'string') {
+    return { type: 'session_meta', data: { cliSessionId: obj.session_id, source: 'claudecode' } };
+  }
+
   // ── Progress / lifecycle events
   if (
     t === 'message_start' || t === 'message_stop' ||
@@ -168,6 +221,12 @@ export function parseCliJsonEvent(obj: Record<string, unknown>): NdjsonEvent | n
     t === 'system'
   ) {
     return { type: 'progress', data: obj };
+  }
+
+  // ── OpenCode session identity: extract from step_start sessionID field
+  if (typeof obj.sessionID === 'string' && obj.sessionID && !t) {
+    // OpenCode events carry sessionID on every line; capture once via first event
+    return { type: 'session_meta', data: { cliSessionId: obj.sessionID, source: 'opencode' } };
   }
 
   return null;
@@ -299,17 +358,35 @@ export class SubprocessRunner extends EventEmitter {
         if (event) {
           if (event.type === 'text_delta') {
             this.receivedText = true;
+            this.emit('event', event);
+          } else if (event.type === 'text_final') {
+            // Only emit finalization text if no streaming deltas were received
+            // (prevents duplication when stream-json emits both deltas and summary)
+            if (!this.receivedText) {
+              this.receivedText = true;
+              this.emit('event', { ...event, type: 'text_delta' });
+            }
+          } else {
+            this.emit('event', event);
           }
-          this.emit('event', event);
         }
       } catch {
         if (trimmed.length > 0 && !this.isNoiseLine(trimmed)) {
-          this.receivedText = true;
-          this.emit('event', {
-            type: 'text_delta',
-            data: { text: trimmed },
-            raw: trimmed,
-          } satisfies NdjsonEvent);
+          // Only treat non-JSON lines as text if we've already received
+          // structured text from the CLI (avoids polluting with startup noise).
+          if (this.receivedText) {
+            this.emit('event', {
+              type: 'text_delta',
+              data: { text: trimmed },
+              raw: trimmed,
+            } satisfies NdjsonEvent);
+          } else {
+            this.emit('event', {
+              type: 'progress',
+              data: { type: 'raw_output', message: trimmed },
+              raw: trimmed,
+            } satisfies NdjsonEvent);
+          }
         }
       }
     }

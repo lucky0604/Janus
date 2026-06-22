@@ -115,7 +115,19 @@ function ApprovalCard({ card }: { card: ApprovalCardData }) {
   );
 }
 
-export function InspectorPane({ tools = [], approvals = [], onClose }: Props) {
+export interface RawEventEntry {
+  ts: number;
+  type: string;
+  data: unknown;
+}
+
+interface InspectorProps extends Props {
+  rawEvents?: RawEventEntry[];
+  contextPreview?: string;
+}
+
+export function InspectorPane({ tools = [], approvals = [], rawEvents = [], contextPreview, onClose }: InspectorProps) {
+  const [tab, setTab] = useState<'tools' | 'events' | 'context'>('tools');
   const hasContent = tools.length > 0 || approvals.length > 0;
 
   return (
@@ -129,16 +141,63 @@ export function InspectorPane({ tools = [], approvals = [], onClose }: Props) {
         )}
       </div>
 
+      <div className={styles.tabBar}>
+        <button
+          onClick={() => setTab('tools')}
+          className={`${styles.tabBtn} ${tab === 'tools' ? styles.tabBtnActive : ''}`}
+        >
+          Tools {tools.length > 0 && `(${tools.length})`}
+        </button>
+        <button
+          onClick={() => setTab('events')}
+          className={`${styles.tabBtn} ${tab === 'events' ? styles.tabBtnActive : ''}`}
+        >
+          Raw Events {rawEvents.length > 0 && `(${rawEvents.length})`}
+        </button>
+        <button
+          onClick={() => setTab('context')}
+          className={`${styles.tabBtn} ${tab === 'context' ? styles.tabBtnActive : ''}`}
+        >
+          Context
+        </button>
+      </div>
+
       <div className={styles.cardList}>
-        {!hasContent && (
-          <div className={styles.emptyInspector}>No active tool calls or approvals</div>
+        {tab === 'tools' && (
+          <>
+            {!hasContent && (
+              <div className={styles.emptyInspector}>No active tool calls or approvals</div>
+            )}
+            {approvals.map((a) => (
+              <ApprovalCard key={a.id} card={a} />
+            ))}
+            {tools.map((t) => (
+              <ToolCard key={t.id} card={t} />
+            ))}
+          </>
         )}
-        {approvals.map((a) => (
-          <ApprovalCard key={a.id} card={a} />
-        ))}
-        {tools.map((t) => (
-          <ToolCard key={t.id} card={t} />
-        ))}
+        {tab === 'events' && (
+          <div className={styles.eventPanel}>
+            {rawEvents.length === 0 ? (
+              <div className={styles.emptyInspector}>No events captured yet</div>
+            ) : (
+              rawEvents.slice(-50).map((ev, i) => (
+                <div key={i} className={styles.eventEntry}>
+                  <span className={styles.eventTs}>{new Date(ev.ts).toLocaleTimeString()}</span>{' '}
+                  <span className={styles.eventType}>{ev.type}</span>
+                  <pre className={styles.eventData}>
+                    {JSON.stringify(ev.data, null, 2).slice(0, 200)}
+                  </pre>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        {tab === 'context' && (
+          <div className={styles.contextPanel}>
+            {contextPreview || 'No handoff context has been generated for this session yet.'}
+          </div>
+        )}
       </div>
     </div>
   );

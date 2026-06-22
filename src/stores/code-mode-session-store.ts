@@ -14,6 +14,8 @@ export interface CodeModeMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  cliId?: import('../../shared/types').CliToolId;
+  nativeSessionId?: string;
   toolCalls?: CodeModeToolCall[];
   thinking?: string;
   progress?: string[];
@@ -57,21 +59,47 @@ function loadActiveSessionProjectPath(): string | null {
 function toStoreMessages(messages: Message[]): CodeModeMessage[] {
   return messages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({
-      id: m.id,
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+    .map((m) => {
+      const meta = m.toolCallId ? undefined : tryParseMeta(m);
+      return {
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        ...(meta?.cliId && { cliId: meta.cliId }),
+        ...(meta?.nativeSessionId && { nativeSessionId: meta.nativeSessionId }),
+        ...(meta?.toolCalls && { toolCalls: meta.toolCalls }),
+        ...(meta?.thinking && { thinking: meta.thinking }),
+      };
+    });
+}
+
+function tryParseMeta(m: Message): Partial<CodeModeMessage> | undefined {
+  if (!m.toolCallId && (m as unknown as Record<string, unknown>)._codeMeta) {
+    return (m as unknown as Record<string, unknown>)._codeMeta as Partial<CodeModeMessage>;
+  }
+  return undefined;
 }
 
 function toPersistMessages(messages: CodeModeMessage[]): Message[] {
   const now = Date.now();
-  return messages.map((m, i) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    timestamp: now + i,
-  }));
+  return messages.map((m, i) => {
+    const base: Message = {
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: now + i,
+    };
+    const hasMeta = m.cliId || m.nativeSessionId || m.toolCalls || m.thinking;
+    if (hasMeta) {
+      (base as unknown as Record<string, unknown>)._codeMeta = {
+        ...(m.cliId && { cliId: m.cliId }),
+        ...(m.nativeSessionId && { nativeSessionId: m.nativeSessionId }),
+        ...(m.toolCalls && { toolCalls: m.toolCalls }),
+        ...(m.thinking && { thinking: m.thinking }),
+      };
+    }
+    return base;
+  });
 }
 
 /**
@@ -176,6 +204,18 @@ function applyEventToMessages(
     ];
   }
 
+  // ── Session meta (native CLI session ID) ──
+  if (event.type === 'session_meta') {
+    const data = event.data as { cliSessionId?: string } | undefined;
+    if (data?.cliSessionId) {
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'assistant' && !last.nativeSessionId) {
+        return [...messages.slice(0, -1), { ...last, nativeSessionId: data.cliSessionId }];
+      }
+    }
+    return messages;
+  }
+
   // ── Progress / lifecycle events (step_start, tool_execution, etc.) ──
   if (event.type === 'progress') {
     const summary = extractProgressSummary(event.data);
@@ -248,7 +288,7 @@ interface CodeModeSessionState {
   ensureSessionBeforeSend: () => Promise<boolean>;
   loadSession: (sessionId: string, projectPath?: string) => Promise<void>;
   clearActiveSession: () => void;
-  appendExchange: (userContent: string) => void;
+  appendExchange: (userContent: string, cliId?: import('../../shared/types').CliToolId) => void;
   applyStreamEvent: (sessionId: string, event: { type: string; data: unknown }) => void;
   setSessionExecuting: (sessionId: string, executing: boolean) => void;
   isSessionExecuting: (sessionId: string) => boolean;
@@ -440,7 +480,7 @@ export const useCodeModeSessionStore = create<CodeModeSessionState>((set, get) =
     set({ activeSessionId: null, activeProjectPath: null, messages: [] });
   },
 
-  appendExchange: (userContent) => {
+  appendExchange: (userContent, cliId) => {
     const sessionId = get().activeSessionId;
     if (!sessionId) return;
 
@@ -453,6 +493,7 @@ export const useCodeModeSessionStore = create<CodeModeSessionState>((set, get) =
       id: `a-${Date.now()}`,
       role: 'assistant',
       content: '',
+      ...(cliId && { cliId }),
     };
     set((state) => {
       const base = state.sessionCache[sessionId] ?? state.messages;

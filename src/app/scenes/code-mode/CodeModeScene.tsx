@@ -13,6 +13,7 @@ import { ThinkingBlock, ToolEventBlock, ProgressBlock } from './CodeModeMessageB
 import { applyRelayToolEvent } from './relay-tool-events';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
+import { useCodeModeStore } from '../../../stores/app-stores';
 import emptyStyles from './CodeModeEmpty.module.css';
 import msgStyles from '../chat/MessageList.module.css';
 
@@ -53,12 +54,14 @@ export function CodeModeScene() {
     void switchToProject(activeProject.path);
   }, [activeProject?.id, activeProject?.path, switchToProject]);
 
+  const { activeCli } = useCodeModeStore();
+
   const handleUserSend = useCallback((prompt: string) => {
     if (!activeSessionId) return;
-    appendExchange(prompt);
+    appendExchange(prompt, activeCli || undefined);
     toolsCacheRef.current.set(activeSessionId, []);
     setTools([]);
-  }, [appendExchange, activeSessionId]);
+  }, [appendExchange, activeSessionId, activeCli]);
 
   const handleStreamEvent = useCallback((sessionId: string, event: { type: string; data: unknown }) => {
     const prev = toolsCacheRef.current.get(sessionId) ?? [];
@@ -95,11 +98,39 @@ export function CodeModeScene() {
             </div>
           ) : (
             <div className={msgStyles.messageList}>
-              {messages.map((msg, i) => (
-                <div
-                  key={msg.id}
-                  className={`${msgStyles.message} ${msg.role === 'user' ? msgStyles.userMessage : msgStyles.assistantMessage}`}
-                >
+              {messages.map((msg, i) => {
+                // Detect CLI switch boundary: if this is an assistant message
+                // with a different cliId than the previous assistant message
+                const prevAssistant = (() => {
+                  for (let j = i - 1; j >= 0; j--) {
+                    if (messages[j].role === 'assistant') return messages[j];
+                  }
+                  return undefined;
+                })();
+                const showHandoffDivider = msg.role === 'assistant'
+                  && msg.cliId
+                  && prevAssistant?.cliId
+                  && msg.cliId !== prevAssistant.cliId;
+
+                const cliBadge = msg.role === 'assistant' && msg.cliId
+                  ? msg.cliId.charAt(0).toUpperCase() + msg.cliId.slice(1)
+                  : 'Relay';
+
+                return (
+                <div key={msg.id}>
+                  {showHandoffDivider && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      margin: '16px 0', opacity: 0.6, fontSize: '12px',
+                    }}>
+                      <div style={{ flex: 1, height: '1px', background: 'var(--border-secondary, #333)' }} />
+                      <span>switched to {cliBadge}</span>
+                      <div style={{ flex: 1, height: '1px', background: 'var(--border-secondary, #333)' }} />
+                    </div>
+                  )}
+                  <div
+                    className={`${msgStyles.message} ${msg.role === 'user' ? msgStyles.userMessage : msgStyles.assistantMessage}`}
+                  >
                   {msg.role === 'user' ? (
                     <div className={msgStyles.messageHeader}>
                       <div className={msgStyles.avatarUser}>U</div>
@@ -109,7 +140,7 @@ export function CodeModeScene() {
                     <div className={msgStyles.messageHeader}>
                       <div className={msgStyles.avatarAssistant}>J</div>
                       <span className={`${msgStyles.senderName} ${msgStyles.senderNameAssistant}`}>Janus</span>
-                      <span className={msgStyles.aiBadge}>Relay</span>
+                      <span className={msgStyles.aiBadge}>{cliBadge}</span>
                     </div>
                   )}
                   <div className={msgStyles.content}>
@@ -141,7 +172,9 @@ export function CodeModeScene() {
                               <div className={msgStyles.thinkingDot} />
                               <div className={msgStyles.thinkingDot} />
                               <div className={msgStyles.thinkingDot} />
-                              <span className={msgStyles.thinkingText}>Thinking...</span>
+                              <span className={msgStyles.thinkingText}>
+                                {msg.cliId === 'codex' ? 'Processing (batch mode)...' : 'Thinking...'}
+                              </span>
                             </div>
                           ) : null
                         )}
@@ -150,8 +183,10 @@ export function CodeModeScene() {
                       msg.content
                     )}
                   </div>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
