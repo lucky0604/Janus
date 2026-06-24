@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- Hoisted the brand into a global, draggable title bar (`AppLayout.TitleBar`) so the window chrome is consistent across Welcome, Code Mode, and chat scenes. Rendered only on macOS where `titleBarStyle: 'hiddenInset'` is active; Windows/Linux keep native chrome.
+
+### Fixed
+- Layout overflow caused by children using `height: 100vh` underneath the 38px title bar. NavBar, ChatPane, SettingsScene, and WelcomeScene now use `height: 100%` with proper `min-height: 0` flex containment so nested scroll regions size correctly.
+- Removed the empty `.header` spacer div in `NavBar` and folded its padding into `.newChatSection`.
+- Added 80px horizontal padding to `.titleBar` so the centered brand never collides with macOS traffic-light buttons at minimum window width.
+
 ## [0.3.0] - 2026-06-22
 
 ### Added

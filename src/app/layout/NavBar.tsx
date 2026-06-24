@@ -89,9 +89,6 @@ export function NavBar() {
 
   return (
     <nav className={styles.navbar}>
-      {/* Header spacer (brand moved to global title bar) */}
-      <div className={styles.header} />
-
       {/* New Chat */}
       <div className={styles.newChatSection}>
         <button className={styles.newChatButton} onClick={handleNewChat}>

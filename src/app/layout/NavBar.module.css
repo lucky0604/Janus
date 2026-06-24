@@ -1,6 +1,6 @@
 .navbar {
   width: var(--sidebar-width);
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary);
@@ -9,16 +9,10 @@
   overflow: hidden;
 }
 
-/* ---- Header (spacer, brand now in global title bar) ---- */
-.header {
-  flex-shrink: 0;
-  padding: var(--space-2) var(--space-4);
-}
-
 /* ---- New Chat Button ---- */
 .newChatSection {
   flex-shrink: 0;
-  padding: 0 var(--space-3) var(--space-3);
+  padding: var(--space-3);
 }
 
 .newChatButton {
@@ -54,6 +48,7 @@
 /* ---- Session List ---- */
 .sessionList {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 0 var(--space-2);
 }

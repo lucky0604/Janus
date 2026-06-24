@@ -3,7 +3,10 @@ import styles from './AppLayout.module.css';
 import { NavBar } from './NavBar';
 import { SceneArea } from './SceneArea';
 
+/** macOS only: gated by `titleBarStyle: 'hiddenInset'`. Other platforms keep native chrome. */
 function TitleBar() {
+  const platform = typeof window !== 'undefined' ? window.janusNative?.platform : undefined;
+  if (platform !== 'darwin') return null;
   return (
     <div className={styles.titleBar}>
       <span className={styles.titleBarBrand}>Janus</span>
