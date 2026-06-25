@@ -18,13 +18,6 @@ export class RateLimitError extends Error {
   }
 }
 
-export class ProviderError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ProviderError';
-  }
-}
-
 export interface UpstreamErrorContext {
   baseUrl?: string;
   model: string;
