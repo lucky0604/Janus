@@ -14,6 +14,8 @@ import { OPERATING_MODES, AGENT_ROLES, promptFileKey, compositeId, compositeName
 import Database from 'better-sqlite3';
 
 import { handleCodeModeRoutes } from './code-mode/handoff-routes';
+import { logError } from './utils/error-log';
+import { probeProvider } from './ai/health-check';
 import { handleStreamRoutes } from './code-mode/stream-routes';
 import { handleOnboardingRoutes } from './code-mode/onboarding-routes';
 import { readBody } from './utils/read-body';
@@ -137,6 +139,10 @@ function handleApiRequest(req: IncomingMessage, res: ServerResponse): Promise<vo
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
     return Promise.resolve();
+  }
+
+  if (req.method === 'POST' && pathname === '/health/provider') {
+    return handleProviderHealth(req, res);
   }
 
   if (req.method === 'GET' && pathname === '/memory/status') {
@@ -276,6 +282,13 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
       code: (err as NodeJS.ErrnoException).code,
       name: err.name,
     });
+    logError({
+      source: 'prod-sse-socket',
+      message: err.message,
+      kind: 'unknown',
+      code: (err as NodeJS.ErrnoException).code,
+      extra: { errorName: err.name },
+    });
   });
 
   /**
@@ -318,7 +331,9 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
     const message = err instanceof Error ? err.message : 'Stream error';
     const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
     const name = err instanceof Error ? err.name : undefined;
+    const stack = err instanceof Error && err.stack ? err.stack.split('\n').slice(0, 3).join('\n') : undefined;
     console.error('[prod-sse] handler error:', { message, code, name });
+    logError({ source: 'prod-sse', message, kind: 'unknown', code, stack, extra: { errorName: name } });
     if (!clientClosed) {
       try {
         res.write(
@@ -341,6 +356,34 @@ async function handleStreamRequest(req: IncomingMessage, res: ServerResponse) {
     }
     try { res.end(); } catch { /* already ended */ }
   }
+}
+
+async function handleProviderHealth(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const apiKey = (req.headers['x-api-key'] as string) || '';
+  if (!apiKey) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, message: 'API key required' }));
+    return;
+  }
+  const body = await readBody(req);
+  const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl : undefined;
+  const modelName = typeof body.modelName === 'string' && body.modelName ? body.modelName : 'gpt-4o';
+
+  const result = await probeProvider(apiKey, baseUrl, modelName);
+  if (!result.ok) {
+    logError({
+      source: 'health-probe',
+      message: result.message || 'probe failed',
+      kind: 'upstream',
+      status: result.status,
+      baseUrl: result.baseUrl,
+      model: result.model,
+      code: result.code,
+      extra: { latencyMs: result.latencyMs },
+    });
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(result));
 }
 
 async function handleApprovalRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {

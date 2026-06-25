@@ -5,6 +5,7 @@ import { agentRegistry } from '../agents/registry';
 import { OPERATING_MODES, compositeId } from '../agents/config';
 import { saveSession, loadSession, getSessionMetadata, shouldUpgradeName, updateSessionName } from '../persistence/session-store';
 import { generateTitle } from '../persistence/title-generator';
+import { logError } from '../utils/error-log';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -254,6 +255,7 @@ export async function handleChatStream(
         const stack = err instanceof Error && err.stack ? err.stack.split('\n').slice(0, 3).join('\n') : undefined;
         const code = err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
         console.error('[chat-route] handler error:', { message, code, stack });
+        logError({ source: 'chat-route', message, kind: 'unknown', code, stack });
         push({
           type: 'error',
           data: { message, kind: 'unknown', code, stack },

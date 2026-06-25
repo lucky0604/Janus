@@ -17,6 +17,7 @@ interface ChatState {
 
   // Actions
   sendMessage: (content: string) => Promise<void>;
+  retryLastMessage: () => Promise<void>;
   stopGeneration: () => void;
   setApiKey: (key: string) => void;
   setBaseUrl: (url: string) => void;
@@ -483,6 +484,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       abortController.abort();
       abortController = null;
     }
+  },
+
+  retryLastMessage: async () => {
+    const { messages, isStreaming } = get();
+    if (isStreaming) return;
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { lastUserIdx = i; break; }
+    }
+    if (lastUserIdx === -1) return;
+    const content = messages[lastUserIdx].content;
+    set({
+      messages: messages.slice(0, lastUserIdx),
+      lastError: null,
+      errorMessage: null,
+      connectionError: false,
+    });
+    await get().sendMessage(content);
   },
 
   setApiKey: (key: string) => {

@@ -13,7 +13,7 @@ interface SuggestedPrompt {
 }
 
 export function ChatPane() {
-  const { messages, isStreaming, isConnecting, connectionError, errorMessage, sendMessage, stopGeneration, clearError } =
+  const { messages, isStreaming, isConnecting, connectionError, errorMessage, lastError, sendMessage, stopGeneration, clearError, retryLastMessage } =
     useChatStore();
   const { activeMode, activeRole, modes, roles } = useAgentStore();
   const listRef = useRef<HTMLDivElement>(null);
@@ -149,6 +149,16 @@ export function ChatPane() {
       {errorMessage && (
         <div className={styles.errorBanner}>
           <span>{errorMessage}</span>
+          {lastError && (
+            <button
+              className={styles.errorDismiss}
+              onClick={() => { clearError(); retryLastMessage(); }}
+              title="Retry"
+              style={{ marginRight: 8 }}
+            >
+              ↻ 重试
+            </button>
+          )}
           <button className={styles.errorDismiss} onClick={clearError} title="Dismiss">×</button>
         </div>
       )}

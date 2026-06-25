@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import type { Message, ToolCall, ToolDefinition } from '../../shared/types';
 import { OpenAIAdapter, AuthError, RateLimitError, UpstreamStreamError } from '../ai/openai-adapter';
 import type { StreamEvent } from '../ai/adapter';
+import { logError } from '../utils/error-log';
 import { toolRegistry } from '../tools/registry';
 import { LoopDetector } from './loop-detector';
 import { ContextCompressor } from './context-compressor';
@@ -232,6 +233,17 @@ export async function* executeDialogTurn(
         code: errorData.code,
         message: errorData.message,
         cause: err instanceof UpstreamStreamError ? err.cause : undefined,
+      });
+
+      logError({
+        source: 'agent-loop',
+        message: errorData.message,
+        kind: errorData.kind,
+        status: errorData.status,
+        baseUrl: errorData.baseUrl,
+        model: errorData.model,
+        code: errorData.code,
+        stack: errorData.stack,
       });
 
       yield { type: 'error', data: errorData };
