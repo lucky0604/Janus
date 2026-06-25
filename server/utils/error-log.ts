@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { promises as fsp } from 'fs';
 import path from 'path';
 import os from 'os';
 
@@ -26,21 +27,33 @@ function ensureDir(): void {
     fs.mkdirSync(LOG_DIR, { recursive: true });
     ensured = true;
   } catch {
-    // ignore — best-effort logging
+    // best-effort: if mkdir fails (perm/full), appendFile below will also fail and we swallow it
   }
 }
 
 /**
- * Strip API keys and URL credentials from arbitrary string fields before persisting.
- * Patterns covered: 'sk-...' style bearer keys, user:pass@host URL syntax.
- * Never throws — returns input unchanged if regex fails. Security-critical.
+ * Strip secrets from arbitrary string fields before persisting.
+ * Provider-agnostic — covers OpenAI/Anthropic/DeepSeek/Qwen/iSoftStone-thor/custom-gateway
+ * key formats observed in the wild. ORDER MATTERS: specific patterns first,
+ * generic Bearer/X-API-Key catch-all last so they don't shadow each other.
+ * Never throws — falls through to input on regex failure.
  */
 function redact(s: string | undefined): string | undefined {
   if (!s) return s;
   return s
-    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-***REDACTED***')
-    .replace(/(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]+/gi, '$1***REDACTED***')
-    .replace(/\/\/([^/@\s]+):([^/@\s]+)@/g, '//$1:***REDACTED***@');
+    // OpenAI-style: sk-..., sk-proj-..., sk-ant-... (Anthropic), pk-..., rk-...
+    // Keep first 6 chars (prefix like 'sk-ant') for debugging, redact the rest.
+    .replace(/\b((?:sk|pk|rk)-[A-Za-z0-9_-]{8,})\b/g, (m) => `${m.slice(0, 6)}***REDACTED***`)
+    // Generic Bearer in Authorization header — any non-whitespace token
+    .replace(/(Authorization\s*:\s*Bearer\s+)\S+/gi, '$1***REDACTED***')
+    // X-API-Key / X-Goog-Api-Key / X-Custom-Api-Key header style (any case)
+    .replace(/(\bx-[a-z-]*api-?key\s*:\s*)\S+/gi, '$1***REDACTED***')
+    // api_key=... / api-key: ... / apikey="..." in body or query
+    .replace(/(\bapi[-_]?key\s*[:=]\s*)['"]?[^'",;\s&]+['"]?/gi, '$1***REDACTED***')
+    // ?key=... or &access_token=... in URL query strings
+    .replace(/([?&](?:api[-_]?key|access[-_]?token|token)=)[^&\s]+/gi, '$1***REDACTED***')
+    // user:pass@host URL credential syntax
+    .replace(/\/\/([^/@\s:]+):([^/@\s]+)@/g, '//$1:***REDACTED***@');
 }
 
 function rotateIfNeeded(): void {
@@ -55,6 +68,11 @@ function rotateIfNeeded(): void {
   }
 }
 
+/**
+ * Fire-and-forget: schedules an async append; never blocks the request path.
+ * Errors are intentionally swallowed (disk full, permissions, racing rotation)
+ * since logging failure must never break user-facing flows.
+ */
 export function logError(entry: Omit<ErrorLogEntry, 'ts'>): void {
   ensureDir();
   rotateIfNeeded();
@@ -70,11 +88,10 @@ export function logError(entry: Omit<ErrorLogEntry, 'ts'>): void {
     stack: redact(entry.stack),
     extra: entry.extra,
   };
-  try {
-    fs.appendFileSync(LOG_FILE, JSON.stringify(safe) + '\n', 'utf8');
-  } catch {
-    // disk full / permissions — drop log silently, don't affect request path
-  }
+  const line = JSON.stringify(safe) + '\n';
+  fsp.appendFile(LOG_FILE, line, 'utf8').catch(() => {
+    // swallow: logging is best-effort, must not break request path
+  });
 }
 
 export function getErrorLogPath(): string {

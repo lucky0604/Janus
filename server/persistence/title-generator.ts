@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
 import type { Message } from '../../shared/types';
+import { BROWSER_HEADERS } from '../ai/headers';
+import { upstreamFetch } from '../ai/upstream-fetch';
 
 export interface TitleGenerationOptions {
   apiKey: string;
@@ -28,6 +30,8 @@ export async function generateTitle(
   const client = new OpenAI({
     apiKey: options.apiKey,
     baseURL: options.baseUrl?.trim() || process.env.OPENAI_BASE_URL,
+    defaultHeaders: BROWSER_HEADERS,
+    fetch: upstreamFetch,
   });
 
   const userPayload = assistantExcerpt

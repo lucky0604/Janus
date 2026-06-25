@@ -1,4 +1,5 @@
 import { sanitizeBaseUrl } from './openai-adapter';
+import { upstreamFetch } from './upstream-fetch';
 
 export interface HealthCheckResult {
   ok: boolean;
@@ -24,7 +25,7 @@ export async function probeProvider(
   const timer = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const res = await fetch(url, {
+    const res = await upstreamFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

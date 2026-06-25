@@ -203,6 +203,11 @@ export async function* executeDialogTurn(
         model?: string;
         code?: string;
         stack?: string;
+        chunksReceived?: number;
+        bytesReceived?: number;
+        elapsedMs?: number;
+        attempt?: number;
+        causeChain?: string;
       } = {
         message: err instanceof Error ? err.message : 'AI call failed',
         kind: 'unknown',
@@ -215,6 +220,11 @@ export async function* executeDialogTurn(
         errorData.baseUrl = err.baseUrl;
         errorData.model = err.model;
         errorData.code = err.code;
+        errorData.chunksReceived = err.chunksReceived;
+        errorData.bytesReceived = err.bytesReceived;
+        errorData.elapsedMs = err.elapsedMs;
+        errorData.attempt = err.attempt;
+        errorData.causeChain = err.causeChain;
       } else if (err instanceof AuthError) {
         errorData.kind = 'auth';
       } else if (err instanceof RateLimitError) {
@@ -231,8 +241,12 @@ export async function* executeDialogTurn(
         baseUrl: errorData.baseUrl,
         model: errorData.model,
         code: errorData.code,
+        chunksReceived: errorData.chunksReceived,
+        bytesReceived: errorData.bytesReceived,
+        elapsedMs: errorData.elapsedMs,
+        attempt: errorData.attempt,
+        causeChain: errorData.causeChain,
         message: errorData.message,
-        cause: err instanceof UpstreamStreamError ? err.cause : undefined,
       });
 
       logError({
@@ -244,6 +258,13 @@ export async function* executeDialogTurn(
         model: errorData.model,
         code: errorData.code,
         stack: errorData.stack,
+        extra: {
+          chunksReceived: errorData.chunksReceived,
+          bytesReceived: errorData.bytesReceived,
+          elapsedMs: errorData.elapsedMs,
+          attempt: errorData.attempt,
+          causeChain: errorData.causeChain,
+        },
       });
 
       yield { type: 'error', data: errorData };
