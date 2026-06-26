@@ -1,19 +1,55 @@
 import https from 'https';
 import { toolRegistry } from '../registry';
 import { parseHTML } from 'linkedom';
+import { ProxyAgent } from 'undici';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import type { Dispatcher } from 'undici';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 const BING_SEARCH_URL = 'https://cn.bing.com/search';
+const BAIDU_SEARCH_URL = 'https://www.baidu.com/s';
 const BING_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_MAX_RESULTS = 10;
 const MAX_RESULTS_CAP = 20;
 const FETCH_TIMEOUT_MS = 15_000;
 const SNIPPET_MAX_LENGTH = 500;
 
+interface FetchInit extends RequestInit {
+  dispatcher?: Dispatcher;
+}
+
 interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+}
+
+// ─── Proxy support (HTTP_PROXY / HTTPS_PROXY) ──────────────────────────
+function getProxyUrl(): string | undefined {
+  return process.env.HTTP_PROXY
+    || process.env.HTTPS_PROXY
+    || process.env.http_proxy
+    || process.env.https_proxy;
+}
+
+let _proxyDispatcher: ProxyAgent | undefined;
+function getProxyDispatcher(): ProxyAgent | undefined {
+  const proxyUrl = getProxyUrl();
+  if (!proxyUrl) return undefined;
+  if (!_proxyDispatcher) {
+    _proxyDispatcher = new ProxyAgent(proxyUrl);
+  }
+  return _proxyDispatcher;
+}
+
+let _httpsAgent: HttpsProxyAgent<string> | undefined;
+function getHttpsProxyAgent(): HttpsProxyAgent<string> | undefined {
+  const proxyUrl = getProxyUrl();
+  if (!proxyUrl) return undefined;
+  if (!_httpsAgent) {
+    _httpsAgent = new HttpsProxyAgent(proxyUrl);
+  }
+  return _httpsAgent;
 }
 
 // ─── Tavily API search ────────────────────────────────────────────────
@@ -23,7 +59,7 @@ async function tavilySearch(query: string, maxResults: number): Promise<{ result
     throw new Error('NO_TAVILY_KEY');
   }
 
-  const res = await fetch(TAVILY_API_URL, {
+  const fetchOpts: FetchInit = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -34,7 +70,12 @@ async function tavilySearch(query: string, maxResults: number): Promise<{ result
       include_raw_content: false,
     }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  };
+  const dispatcher = getProxyDispatcher();
+  if (dispatcher) {
+    fetchOpts.dispatcher = dispatcher;
+  }
+  const res = await fetch(TAVILY_API_URL, fetchOpts);
 
   if (!res.ok) {
     // Sanitize error — don't expose response body which may contain API details
@@ -58,13 +99,18 @@ async function tavilySearch(query: string, maxResults: number): Promise<{ result
 async function duckduckgoSearch(query: string, maxResults: number): Promise<{ results: SearchResult[]; engine: string }> {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
 
-  const res = await fetch(url, {
+  const fetchOpts: FetchInit = {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; JanusBot/1.0)',
       'Accept': 'text/html',
     },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  };
+  const dispatcher = getProxyDispatcher();
+  if (dispatcher) {
+    fetchOpts.dispatcher = dispatcher;
+  }
+  const res = await fetch(url, fetchOpts);
 
   if (!res.ok) {
     throw new Error(`DuckDuckGo HTTP ${res.status}`);
@@ -115,14 +161,19 @@ async function bingSearch(query: string, maxResults: number): Promise<{ results:
 
   const html = await new Promise<string>((resolve, reject) => {
     let settled = false;
-    const req = https.get(url, {
+    const opts: Record<string, unknown> = {
       headers: {
         'User-Agent': BING_USER_AGENT,
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9',
       },
       timeout: FETCH_TIMEOUT_MS,
-    }, (res) => {
+    };
+    const proxyAgent = getHttpsProxyAgent();
+    if (proxyAgent) {
+      opts.agent = proxyAgent;
+    }
+    const req = https.get(url, opts, (res) => {
       if (res.statusCode && res.statusCode >= 400) {
         settled = true;
         res.resume();
@@ -169,13 +220,67 @@ async function bingSearch(query: string, maxResults: number): Promise<{ results:
   return { results, engine: 'bing' };
 }
 
+// ─── Baidu HTML fallback (works where Bing is blocked, e.g. China) ─────
+async function baiduSearch(query: string, maxResults: number): Promise<{ results: SearchResult[]; engine: string }> {
+  const encoded = encodeURIComponent(query);
+  const url = `${BAIDU_SEARCH_URL}?wd=${encoded}&rn=${maxResults}`;
+
+  const fetchOpts: FetchInit = {
+    headers: {
+      'User-Agent': BING_USER_AGENT,
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  };
+  const dispatcher = getProxyDispatcher();
+  if (dispatcher) {
+    fetchOpts.dispatcher = dispatcher;
+  }
+  const res = await fetch(url, fetchOpts);
+
+  if (!res.ok) {
+    throw new Error(`Baidu HTTP ${res.status}`);
+  }
+
+  const html = await res.text();
+  const { document } = parseHTML(html);
+  const results: SearchResult[] = [];
+
+  const containers = document.querySelectorAll('div.c-container');
+  for (let i = 0; i < Math.min(containers.length, maxResults); i++) {
+    const el = containers[i];
+    const anchor = el.querySelector('h3 a') || el.querySelector('.c-title a');
+    const snippetEl = el.querySelector('.c-abstract')
+      || el.querySelector('.content-right_8Zs40')
+      || el.querySelector('span.content-right_8Zs40');
+
+    const title = (anchor?.textContent || '').trim();
+    const snippet = (snippetEl?.textContent || '').trim().slice(0, SNIPPET_MAX_LENGTH);
+
+    let href = anchor?.getAttribute('href') || '';
+    if (href.startsWith('/link?url=') || href.includes('baidu.com/link')) {
+      const dataUrl = anchor?.getAttribute('data-url') || anchor?.getAttribute('mu');
+      if (dataUrl) {
+        href = dataUrl;
+      }
+    }
+
+    if (href && title) {
+      results.push({ title, url: href, snippet });
+    }
+  }
+
+  return { results, engine: 'baidu' };
+}
+
 // Exported for testing
-export { tavilySearch, duckduckgoSearch, bingSearch };
+export { tavilySearch, duckduckgoSearch, bingSearch, baiduSearch };
 
 // ─── Tool registration ────────────────────────────────────────────────
 toolRegistry.register({
   name: 'web_search',
-  description: 'Search the web. Uses Tavily API if TAVILY_API_KEY is set, otherwise falls back to DuckDuckGo, then Bing (free, no key needed). Returns titles, URLs, and snippets.',
+  description: 'Search the web. Uses Tavily API if TAVILY_API_KEY is set, otherwise falls back to DuckDuckGo, then Bing, then Baidu (free, no key needed). Supports HTTP_PROXY/HTTPS_PROXY env vars for all engines. Returns titles, URLs, and snippets.',
   parameters: {
     type: 'object',
     properties: {
@@ -198,19 +303,24 @@ toolRegistry.register({
     );
 
     try {
-      // Try Tavily first, fall back to DuckDuckGo, then Bing
+      // Try Tavily first, fall back to DuckDuckGo, then Bing, then Baidu
       let result: { results: SearchResult[]; engine: string };
       try {
         result = await tavilySearch(query, maxResults);
       } catch (err) {
         const msg = err instanceof Error ? err.message : '';
         if (msg === 'NO_TAVILY_KEY' || msg.includes('Tavily')) {
-          // Fall back to DuckDuckGo, then Bing
+          // Fall back to DuckDuckGo, then Bing, then Baidu
           try {
             result = await duckduckgoSearch(query, maxResults);
           } catch (ddgErr) {
-            console.error('DuckDuckGo fallback failed, trying Bing:', ddgErr);
-            result = await bingSearch(query, maxResults);
+            console.warn('DuckDuckGo fallback failed, trying Bing:', ddgErr);
+            try {
+              result = await bingSearch(query, maxResults);
+            } catch (bingErr) {
+              console.warn('Bing fallback failed, trying Baidu:', bingErr);
+              result = await baiduSearch(query, maxResults);
+            }
           }
         } else {
           throw err;

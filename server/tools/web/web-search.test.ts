@@ -188,3 +188,85 @@ describe('web_search: bingSearch error paths', () => {
     await expect(bingSearch('query', 5)).rejects.toThrow('stream error');
   });
 });
+
+describe('web_search: Baidu fallback', () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
+
+  it('baiduSearch parses HTML results, extracting data-url from Baidu redirects', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => `
+        <div class="c-container">
+          <h3><a href="/link?url=redirect123" data-url="https://real.com/page1">Baidu Result 1</a></h3>
+          <span class="content-right_8Zs40">First baidu snippet text</span>
+        </div>
+        <div class="c-container">
+          <h3><a href="/link?url=redirect456" mu="https://real.com/page2">Baidu Result 2</a></h3>
+          <div class="c-abstract">Second baidu snippet here</div>
+        </div>
+        <div class="c-container">
+          <h3><a href="https://example.com/direct-link">Direct URL Result</a></h3>
+          <div class="c-abstract">Direct link snippet</div>
+        </div>
+      `,
+    });
+
+    const { baiduSearch } = await import('./web-search');
+    const result = await baiduSearch('test query', 5);
+    expect(result.engine).toBe('baidu');
+    expect(result.results).toHaveLength(3);
+    // data-url extracted from redirect href
+    expect(result.results[0].url).toBe('https://real.com/page1');
+    expect(result.results[0].title).toBe('Baidu Result 1');
+    expect(result.results[0].snippet).toBe('First baidu snippet text');
+    // mu attribute extracted from redirect href
+    expect(result.results[1].url).toBe('https://real.com/page2');
+    expect(result.results[1].snippet).toBe('Second baidu snippet here');
+    // non-redirect href kept as-is
+    expect(result.results[2].url).toBe('https://example.com/direct-link');
+  });
+
+  it('baiduSearch handles empty results gracefully', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => '<html><body>No results</body></html>',
+    });
+
+    const { baiduSearch } = await import('./web-search');
+    const result = await baiduSearch('obscure query', 5);
+    expect(result.engine).toBe('baidu');
+    expect(result.results).toHaveLength(0);
+  });
+
+  it('baiduSearch rejects on HTTP >=400', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+    });
+
+    const { baiduSearch } = await import('./web-search');
+    await expect(baiduSearch('query', 5)).rejects.toThrow('Baidu HTTP 403');
+  });
+
+  it('baiduSearch keeps redirect URL when data-url is absent', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => `
+        <div class="c-container">
+          <h3><a href="/link?url=some-redirect-hash">Result Without Data URL</a></h3>
+          <div class="c-abstract">snippet</div>
+        </div>
+      `,
+    });
+
+    const { baiduSearch } = await import('./web-search');
+    const result = await baiduSearch('test', 5);
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].url).toBe('/link?url=some-redirect-hash');
+  });
+});
