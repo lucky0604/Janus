@@ -1,4 +1,4 @@
-import { useAgentStore } from '../../../stores/app-stores';
+import { useAgentStore } from '../../../stores/agent-store';
 import styles from './ModeSelector.module.css';
 
 export function ModeSelector() {

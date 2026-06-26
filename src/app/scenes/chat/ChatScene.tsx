@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChatStore } from '../../../stores/chat-store';
-import { useAgentStore } from '../../../stores/app-stores';
+import { useAgentStore } from '../../../stores/agent-store';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { ModeSelector } from './ModeSelector';
-import styles from './ChatPane.module.css';
+import styles from './ChatScene.module.css';
 
 interface SuggestedPrompt {
   title: string;
@@ -12,7 +12,7 @@ interface SuggestedPrompt {
   icon: string;
 }
 
-export function ChatPane() {
+export function ChatScene() {
   const { messages, isStreaming, isConnecting, connectionError, errorMessage, lastError, sendMessage, stopGeneration, clearError, retryLastMessage } =
     useChatStore();
   const { activeMode, activeRole, modes, roles } = useAgentStore();

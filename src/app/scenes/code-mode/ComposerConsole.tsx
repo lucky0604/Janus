@@ -1,72 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
-import { useCodeModeStore } from '../../../stores/app-stores';
+import { useCodeModeStore } from '../../../stores/code-mode-store';
 import type { CliDetectionResult, CliToolId } from '../../../../shared/types';
+import { PickerSheet } from './PickerSheet';
+import { getPreviousCliFromMessages, useIsNarrow } from './composer-hooks';
 import styles from './ComposerConsole.module.css';
-
-function getPreviousCliFromMessages(sessionId: string): CliToolId | undefined {
-  const store = useCodeModeSessionStore.getState();
-  const messages = store.sessionCache[sessionId] ?? store.messages;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (msg.role === 'assistant' && msg.cliId) {
-      return msg.cliId;
-    }
-  }
-  return undefined;
-}
-
-function useIsNarrow(breakpoint = 768): boolean {
-  const [narrow, setNarrow] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
-    const handler = (e: MediaQueryListEvent) => setNarrow(e.matches);
-    setNarrow(mq.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, [breakpoint]);
-  return narrow;
-}
-
-interface PickerSheetProps {
-  title: string;
-  options: Array<{ id: string; label: string; disabled?: boolean; active?: boolean }>;
-  onSelect: (id: string) => void;
-  onClose: () => void;
-}
-
-function PickerSheet({ title, options, onSelect, onClose }: PickerSheetProps) {
-  return (
-    <div className={styles.sheetOverlay} onClick={onClose}>
-      <div className={styles.sheetPanel} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.sheetHeader}>
-          <span className={styles.sheetTitle}>{title}</span>
-          <button className={styles.sheetCloseBtn} onClick={onClose}>×</button>
-        </div>
-        {options.map((opt) => (
-          <button
-            key={opt.id}
-            className={
-              opt.disabled
-                ? styles.sheetOptionDisabled
-                : opt.active
-                  ? styles.sheetOptionActive
-                  : styles.sheetOption
-            }
-            onClick={() => !opt.disabled && onSelect(opt.id)}
-            disabled={opt.disabled}
-          >
-            <span>{opt.active && <span className={styles.sheetCheck}>✓ </span>}{opt.label}</span>
-            <span className={styles.sheetOptionStatus}></span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 interface Props {
   onStreamEvent?: (sessionId: string, event: { type: string; data: unknown }) => void;

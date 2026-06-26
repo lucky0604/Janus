@@ -1,4 +1,4 @@
-import { useSceneStore } from '../../../stores/app-stores';
+import { useSceneStore } from '../../../stores/scene-store';
 import styles from './WelcomeScene.module.css';
 
 export function WelcomeScene() {

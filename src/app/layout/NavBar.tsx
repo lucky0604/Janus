@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useSceneStore, useThemeStore, useSessionStore, useAgentStore } from '../../stores/app-stores';
+import { useSceneStore } from '../../stores/scene-store';
+import { useThemeStore } from '../../stores/theme-store';
+import { useSessionStore } from '../../stores/session-store';
+import { useAgentStore } from '../../stores/agent-store';
 import { useChatStore } from '../../stores/chat-store';
 import styles from './NavBar.module.css';
 

@@ -3,9 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import { SubprocessRunner, type NdjsonEvent } from './subprocess-runner';
 import { getCliConfig, checkModelCompatibility } from './cli-registry';
-import { saveCliSession, markTurnCompleted, markTurnDirty, getNativeSessionId, getLastUsedCli } from './cli-session-tracker';
+import { saveCliSession, markTurnCompleted, markTurnDirty } from './cli-session-tracker';
 import { assembleHandoffContext, writeWorkspaceContextFile } from './context-assembler';
+import { determineResumeMode, buildCliArgs, type CliInvocationContext } from './stream-format';
+import { SSEWriter } from './stream-sse';
 import type { CliToolId } from '../../shared/types';
+
+// Re-export public types so existing consumers don't break
+export type { ResumeMode, CliInvocationContext } from './stream-format';
 
 const activeRunners = new Map<string, SubprocessRunner>();
 
@@ -62,19 +67,12 @@ export function handleStreamRoutes(
         if (model) {
           const compat = checkModelCompatibility(cliId, model);
           if (!compat.compatible) {
-            res.writeHead(200, {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              'Connection': 'keep-alive',
-            });
-            const warn = JSON.stringify({
+            const sse = new SSEWriter(res, 'compat-check', resolvedWorkspace);
+            sse.writeRaw(JSON.stringify({
               type: 'error',
               data: { message: `${compat.warning}\n\nSuggestion: ${compat.suggestion}` },
-            });
-            res.write(`data: ${warn}\n\n`);
-            const done = JSON.stringify({ type: 'done', data: { code: 1 } });
-            res.write(`data: ${done}\n\n`);
-            res.end();
+            }));
+            sse.writeDone(1);
             return;
           }
         }
@@ -116,25 +114,7 @@ export function handleStreamRoutes(
         activeRunners.set(uniqueKey, runner);
         activeRunners.set(sessionKey, runner);
 
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-          'X-Stream-Id': sessionKey,
-          'X-Workspace': resolvedWorkspace,
-        });
-
-        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-        let pendingText = '';
-
-        const flushText = () => {
-          if (pendingText) {
-            const payload = JSON.stringify({ type: 'text_delta', data: { text: pendingText } });
-            res.write(`data: ${payload}\n\n`);
-            pendingText = '';
-          }
-          debounceTimer = null;
-        };
+        const sse = new SSEWriter(res, sessionKey, resolvedWorkspace);
 
         let sessionMetaCaptured = false;
 
@@ -148,34 +128,22 @@ export function handleStreamRoutes(
                 sessionMetaCaptured = true;
               }
             }
-            const payload = JSON.stringify({ type: event.type, data: event.data });
-            res.write(`data: ${payload}\n\n`);
-          } else if (event.type === 'text_delta') {
-            const text = (event.data as { text?: string })?.text ?? '';
-            pendingText += text;
-            if (!debounceTimer) {
-              debounceTimer = setTimeout(flushText, 50);
-            }
-          } else {
-            if (pendingText) flushText();
-            const payload = JSON.stringify({ type: event.type, data: event.data });
-            res.write(`data: ${payload}\n\n`);
           }
+          sse.writeEvent(event);
         });
 
         let resumeFallbackAttempted = false;
 
         runner.on('exit', (code: number) => {
-          if (pendingText) flushText();
+          sse.flushPending();
 
           // Resume failed → fallback to fresh mode (only one retry)
           if (code !== 0 && resumeMode === 'resume' && !resumeFallbackAttempted) {
             resumeFallbackAttempted = true;
-            const fallbackPayload = JSON.stringify({
+            sse.writeRaw(JSON.stringify({
               type: 'progress',
               data: { type: 'system', message: 'Resume failed, retrying in fresh mode...' },
-            });
-            res.write(`data: ${fallbackPayload}\n\n`);
+            }));
 
             const freshCtx: CliInvocationContext = { ...ctx, resumeMode: 'fresh', nativeSessionId: undefined };
             const freshArgs = buildCliArgs(freshCtx);
@@ -192,24 +160,13 @@ export function handleStreamRoutes(
                     sessionMetaCaptured = true;
                   }
                 }
-                const p = JSON.stringify({ type: event.type, data: event.data });
-                res.write(`data: ${p}\n\n`);
-              } else if (event.type === 'text_delta') {
-                const text = (event.data as { text?: string })?.text ?? '';
-                pendingText += text;
-                if (!debounceTimer) debounceTimer = setTimeout(flushText, 50);
-              } else {
-                if (pendingText) flushText();
-                const p = JSON.stringify({ type: event.type, data: event.data });
-                res.write(`data: ${p}\n\n`);
               }
+              sse.writeEvent(event);
             });
             freshRunner.on('exit', (freshCode: number) => {
-              if (pendingText) flushText();
+              sse.flushPending();
               if (sessionId && freshCode === 0) markTurnCompleted(sessionId, cliId);
-              const done = JSON.stringify({ type: 'done', data: { code: freshCode } });
-              res.write(`data: ${done}\n\n`);
-              res.end();
+              sse.writeDone(freshCode);
               activeRunners.delete(uniqueKey);
               activeRunners.delete(sessionKey);
             });
@@ -221,15 +178,13 @@ export function handleStreamRoutes(
           if (sessionId && code === 0) {
             markTurnCompleted(sessionId, cliId);
           }
-          const done = JSON.stringify({ type: 'done', data: { code } });
-          res.write(`data: ${done}\n\n`);
-          res.end();
+          sse.writeDone(code);
           activeRunners.delete(uniqueKey);
           activeRunners.delete(sessionKey);
         });
 
         req.on('close', () => {
-          if (debounceTimer) clearTimeout(debounceTimer);
+          sse.cancelDebounce();
           // Mark session dirty on abort (unsafe to resume)
           if (sessionId) {
             markTurnDirty(sessionId, cliId);
@@ -284,108 +239,3 @@ export function handleStreamRoutes(
 
   return false;
 }
-
-export type ResumeMode = 'fresh' | 'resume' | 'handoff';
-
-export interface CliInvocationContext {
-  cliId: CliToolId;
-  prompt: string;
-  model?: string;
-  workspacePath: string;
-  resumeMode: ResumeMode;
-  nativeSessionId?: string;
-  handoffPrefix?: string;
-}
-
-function determineResumeMode(
-  sessionId: string | undefined,
-  cliId: CliToolId,
-  previousCli?: CliToolId,
-): { mode: ResumeMode; nativeSessionId?: string } {
-  if (!sessionId) return { mode: 'fresh' };
-
-  // Prefer tracker; fall back to frontend-provided previousCli
-  const lastCli = getLastUsedCli(sessionId) ?? previousCli;
-  if (!lastCli) return { mode: 'fresh' };
-
-  // Same CLI as last time → try native resume
-  if (lastCli === cliId) {
-    const tracked = getNativeSessionId(sessionId, cliId);
-    if (
-      tracked
-      && tracked.nativeId
-      && !tracked.nativeId.startsWith('__janus_')
-      && tracked.lastTurnCompleted
-    ) {
-      return { mode: 'resume', nativeSessionId: tracked.nativeId };
-    }
-    return { mode: 'fresh' };
-  }
-
-  // Different CLI → handoff needed
-  return { mode: 'handoff' };
-}
-
-function buildCliArgs(ctx: CliInvocationContext): string[] {
-  const { cliId, prompt, model, workspacePath, resumeMode, nativeSessionId, handoffPrefix } = ctx;
-
-  const effectivePrompt = handoffPrefix
-    ? `${handoffPrefix}\n\n---\n\n${prompt}`
-    : prompt;
-
-  switch (cliId) {
-    case 'claudecode': {
-      const base = [
-        '-p', effectivePrompt,
-        '--output-format', 'stream-json',
-        '--verbose',
-        '--permission-mode', 'bypassPermissions',
-        '--add-dir', workspacePath,
-        ...(model ? ['--model', model] : []),
-      ];
-      if (resumeMode === 'resume' && nativeSessionId) {
-        base.push('--resume', nativeSessionId);
-      }
-      return base;
-    }
-    case 'codex': {
-      if (resumeMode === 'resume' && nativeSessionId) {
-        return [
-          'resume',
-          '--thread-id', nativeSessionId,
-          '-C', workspacePath,
-          effectivePrompt,
-          '--json',
-          '--skip-git-repo-check',
-          '-s', 'workspace-write',
-          ...(model ? ['--model', model] : []),
-        ];
-      }
-      return [
-        'exec',
-        '-C', workspacePath,
-        effectivePrompt,
-        '--json',
-        '--skip-git-repo-check',
-        '-s', 'workspace-write',
-        ...(model ? ['--model', model] : []),
-      ];
-    }
-    case 'opencode': {
-      const base = [
-        'run', effectivePrompt,
-        '--dir', workspacePath,
-        '--format', 'json',
-        '--pure',
-        ...(model ? ['--model', model] : []),
-      ];
-      if (resumeMode === 'resume' && nativeSessionId) {
-        base.push('--session', nativeSessionId);
-      }
-      return base;
-    }
-    default:
-      return [effectivePrompt];
-  }
-}
-

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useAgentStore } from '../../../stores/app-stores';
+import { useAgentStore } from '../../../stores/agent-store';
 import type { AgentRoleId } from '../../../../shared/types';
 import styles from './RoleSelector.module.css';
 

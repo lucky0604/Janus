@@ -1,5 +1,5 @@
-import { useSceneStore } from '../../stores/app-stores';
-import { ChatPane } from '../scenes/chat/ChatPane';
+import { useSceneStore } from '../../stores/scene-store';
+import { ChatScene } from '../scenes/chat/ChatScene';
 import { WelcomeScene } from '../scenes/welcome/WelcomeScene';
 import { SettingsScene } from '../scenes/settings/SettingsScene';
 import { TerminalSpikeScene } from '../scenes/terminal-spike/TerminalSpikeScene';
@@ -12,7 +12,7 @@ export function SceneArea() {
     case 'welcome':
       return <WelcomeScene />;
     case 'chat':
-      return <ChatPane />;
+      return <ChatScene />;
     case 'settings':
       return <SettingsScene />;
     case 'terminal_spike':
@@ -20,6 +20,6 @@ export function SceneArea() {
     case 'code_mode':
       return <CodeModeScene />;
     default:
-      return <ChatPane />;
+      return <ChatScene />;
   }
 }

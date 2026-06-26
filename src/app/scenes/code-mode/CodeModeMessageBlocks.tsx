@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import msgStyles from '../chat/MessageList.module.css';
-import type { CodeModeToolCall } from '../../../stores/code-mode-session-store';
+import type { CodeModeToolCall } from '../../../stores/code-mode-session-types';
 
 /** Animated thinking dots + inline reasoning text from the model. */
 export function ThinkingBlock({ text }: { text: string }) {

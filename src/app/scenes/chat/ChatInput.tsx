@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, KeyboardEvent, useEffect } from 'react';
-import { useAgentStore } from '../../../stores/app-stores';
+import { useAgentStore } from '../../../stores/agent-store';
 import { useChatStore } from '../../../stores/chat-store';
 import { RoleSelector } from './RoleSelector';
 import type { OperatingModeId, AgentRoleId } from '../../../../shared/types';

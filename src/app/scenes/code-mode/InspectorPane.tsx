@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useFocusTrap } from './useFocusTrap';
+import { useFocusTrap } from '../../../hooks/useFocusTrap';
 import styles from './InspectorPane.module.css';
 
 export interface ToolCardData {

@@ -13,7 +13,7 @@ import { ThinkingBlock, ToolEventBlock, ProgressBlock } from './CodeModeMessageB
 import { applyRelayToolEvent } from './relay-tool-events';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
-import { useCodeModeStore } from '../../../stores/app-stores';
+import { useCodeModeStore } from '../../../stores/code-mode-store';
 import emptyStyles from './CodeModeEmpty.module.css';
 import msgStyles from '../chat/MessageList.module.css';
 

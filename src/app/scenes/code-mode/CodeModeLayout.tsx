@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
-import { useLayoutStore } from '../../../stores/app-stores';
+import { useLayoutStore } from '../../../stores/layout-store';
 import styles from './CodeModeLayout.module.css';
 
 const MIN_SIDEBAR = 200;

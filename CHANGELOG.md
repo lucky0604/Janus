@@ -6,7 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-26
+
 ### Changed
+- **Project-wide structure restructuring**: All 12 files exceeding 300 lines split into focused modules under 300 lines each. Zero files over 300 lines remain (was 12). Total 159 TypeScript/TSX files across 16,410 lines.
+- `shared/types.ts` (325 lines) split into 7 domain files (`messages`, `stream`, `agents`, `session`, `memory`, `code-mode`) with barrel `index.ts` export. Import paths unchanged.
+- `src/stores/app-stores.ts` (294 lines, 6 stores) split into 6 individual files: `theme-store`, `agent-store`, `layout-store`, `code-mode-store`, `scene-store`, `session-store`. 14 import sites updated.
+- `src/stores/chat-store.ts` (648→285 lines): extracted SSE event processing to `chat-sse-handler.ts` (255 lines) and approval/hydrate actions to `chat-actions.ts` (72 lines).
+- `src/stores/code-mode-session-store.ts` (613→286 lines): split into `code-mode-session-types.ts`, `code-mode-session-helpers.ts`, `code-mode-session-events.ts`.
+- `server/prod.ts` (517→120 lines): extracted `router.ts` + `server/handlers/` directory with 6 handler files (agents, stream, health, approval, messages, memory).
+- `server/ai/openai-adapter.ts` (438→~170 lines): split into `openai-request-builder.ts`, `openai-stream-parser.ts`, `openai-retry.ts`, `openai-errors.ts`.
+- `server/engine/agent-loop.ts` (429→~239 lines): extracted `tool-dispatcher.ts` and `message-handler.ts`.
+- `server/code-mode/subprocess-runner.ts` (400→175 lines): extracted `subprocess-types.ts` and `subprocess-io.ts`.
+- `server/code-mode/stream-routes.ts` (391→241 lines): extracted `stream-format.ts` and `stream-sse.ts`.
+- `server/memory/persistent-memory.ts` (354→81 lines): split into `db-connection.ts`, `memory-crud.ts`, `memory-files.ts`.
+- `server/persistence/session-store.ts` (332→221 lines): split into `file-utils.ts`, `session-names.ts`, `index-manager.ts`.
+- `server/evolution/evolver-bridge.ts` (314→150 lines): split into `evolver-types.ts`, `binary-resolver.ts`, `gep-parser.ts`.
+- `src/app/scenes/chat/MessageList.tsx` (474→49 lines): extracted 5 component files (`CodeBlock`, `ToolCallBlock`, `EventCards`, `ThinkingLoader`, `MessageBubble`).
+- `src/app/scenes/code-mode/ComposerConsole.tsx` (353→292 lines): extracted `PickerSheet.tsx` and `composer-hooks.ts`.
+- `ChatPane.tsx` renamed to `ChatScene.tsx` for naming consistency with other scenes.
+- `useFocusTrap.ts` and `useApprovalTimeout.ts` moved from `code-mode/` scene to `src/hooks/` for cross-scene reuse.
+- `web-fetch.ts` and `web-search.ts` moved into `server/tools/web/` subdirectory for consistent tool nesting.
+
+### Added
+- `ARCHITECTURE.md` (296 lines): documents directory structure, naming conventions, module organization patterns, and architectural decisions.
+
+### Removed
+- Build artifacts removed from source tree: `electron/main.js`, `electron/preload.js`, `main.js`, `server/prod.js`. Added `server/prod.js` to `.gitignore`.
+
+### Changed
+- Hoisted the brand into a global, draggable title bar (`AppLayout.TitleBar`) so the window chrome is consistent across Welcome, Code Mode, and chat scenes. Rendered only on macOS where `titleBarStyle: 'hiddenInset'` is active; Windows/Linux keep native chrome.
 - Hoisted the brand into a global, draggable title bar (`AppLayout.TitleBar`) so the window chrome is consistent across Welcome, Code Mode, and chat scenes. Rendered only on macOS where `titleBarStyle: 'hiddenInset'` is active; Windows/Linux keep native chrome.
 
 ### Fixed

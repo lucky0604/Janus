@@ -1,4 +1,4 @@
-import { useSceneStore } from '../../stores/app-stores';
+import { useSceneStore } from '../../stores/scene-store';
 import styles from './AppLayout.module.css';
 import { NavBar } from './NavBar';
 import { SceneArea } from './SceneArea';

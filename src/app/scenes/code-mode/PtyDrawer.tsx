@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLayoutStore } from '../../../stores/app-stores';
+import { useLayoutStore } from '../../../stores/layout-store';
 import styles from './PtyDrawer.module.css';
 
 interface JanusNativeBridge {

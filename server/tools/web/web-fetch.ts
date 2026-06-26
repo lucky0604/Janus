@@ -2,9 +2,9 @@ import http from 'http';
 import https from 'https';
 import dns from 'dns';
 import { URL } from 'url';
-import { toolRegistry } from './registry';
-import { validateUrlForFetch, validateRedirectChain, isPrivateIP } from './web/url-validator';
-import { extractContent } from './web/content-extractor';
+import { toolRegistry } from '../registry';
+import { validateUrlForFetch, validateRedirectChain, isPrivateIP } from './url-validator';
+import { extractContent } from './content-extractor';
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB raw response

@@ -1,5 +1,5 @@
 import https from 'https';
-import { toolRegistry } from './registry';
+import { toolRegistry } from '../registry';
 import { parseHTML } from 'linkedom';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';

@@ -58,3 +58,4 @@ electron/preload.js
 
 # Stale build artifacts (must not be committed)
 main.js
+server/prod.js
