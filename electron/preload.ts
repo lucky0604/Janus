@@ -1,5 +1,5 @@
 /**
- * Janus Preload Script
+ * Kavis Preload Script
  *
  * Exposes a safe bridge from renderer to main process via contextBridge.
  * Currently minimal — the renderer talks to the embedded server via HTTP/SSE,
@@ -11,7 +11,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('janusNative', {
+contextBridge.exposeInMainWorld('kavisNative', {
   /** Get the platform (darwin, win32, linux) */
   platform: process.platform,
 

@@ -1,5 +1,5 @@
 /**
- * Janus Electron Main Process
+ * Kavis Electron Main Process
  *
  * Starts a local HTTP server (with API routes + static files)
  * and opens a BrowserWindow pointing to it.
@@ -68,11 +68,11 @@ async function startServer(): Promise<number | undefined> {
     try {
       // Check if Vite is already running (e.g. user started it manually)
       await waitForServer(devUrl, 1000);
-      console.log('[Janus] Vite dev server already running');
+      console.log('[Kavis] Vite dev server already running');
       return undefined; // Vite handles both frontend and API
     } catch {
       // Not running — spawn it
-      console.log('[Janus] Starting Vite dev server...');
+      console.log('[Kavis] Starting Vite dev server...');
       viteDevProc = spawn('npx', ['vite'], {
         cwd: path.resolve(__dirname, '..'),
         stdio: 'inherit',
@@ -80,17 +80,17 @@ async function startServer(): Promise<number | undefined> {
       });
 
       viteDevProc.on('error', (err) => {
-        console.error('[Janus] Failed to start Vite:', err);
+        console.error('[Kavis] Failed to start Vite:', err);
       });
 
       viteDevProc.on('exit', (code) => {
         if (code && code !== 0) {
-          console.warn('[Janus] Vite exited with code', code);
+          console.warn('[Kavis] Vite exited with code', code);
         }
       });
 
       await waitForServer(devUrl, 30000);
-      console.log('[Janus] Vite dev server ready');
+      console.log('[Kavis] Vite dev server ready');
       return undefined;
     }
   }
@@ -100,14 +100,14 @@ async function startServer(): Promise<number | undefined> {
   const promptsDir = path.join(app.getAppPath(), 'server', 'agents', 'prompts');
 
   try {
-    const { createJanusServer } = await import('../dist/server/prod.js');
-    const janusServer = await createJanusServer(distDir, undefined, promptsDir);
-    serverHandle = janusServer;
-    return janusServer.port;
+    const { createKavisServer } = await import('../dist/server/prod.js');
+    const kavisServer = await createKavisServer(distDir, undefined, promptsDir);
+    serverHandle = kavisServer;
+    return kavisServer.port;
   } catch (err) {
     const msg = err instanceof Error ? (err.stack || err.message) : String(err);
-    console.error('[Janus] Failed to start embedded server:', msg);
-    dialog.showErrorBox('Janus Startup Error', `Failed to start embedded server:\n\n${msg}`);
+    console.error('[Kavis] Failed to start embedded server:', msg);
+    dialog.showErrorBox('Kavis Startup Error', `Failed to start embedded server:\n\n${msg}`);
     return undefined;
   }
 }
@@ -120,7 +120,7 @@ function createWindow(port?: number) {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'Janus',
+    title: 'Kavis',
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#0a0a0a',
     webPreferences: {

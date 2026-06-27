@@ -15,7 +15,7 @@ import { submitManyForReview, getPendingReviews } from '../evolution/skill-revie
 import { dispatchToolCalls } from './tool-dispatcher';
 import { handleStreamError, buildSystemContent, performMemoryRecall } from './message-handler';
 
-const DEFAULT_SYSTEM_PROMPT = `You are Janus, an AI workspace assistant. You help users analyze, understand, and work with their local project files.
+const DEFAULT_SYSTEM_PROMPT = `You are Kavis, an AI workspace assistant. You help users analyze, understand, and work with their local project files.
 
 ## Your Capabilities
 - Read and write files

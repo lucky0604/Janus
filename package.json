@@ -1,9 +1,9 @@
 {
-  "name": "janus",
+  "name": "kavis",
   "private": true,
   "version": "0.3.1",
-  "description": "Janus - AI Development Assistant",
-  "author": "Janus Team <dev@janus.local>",
+  "description": "Kavis - AI Development Assistant",
+  "author": "Kavis Team <dev@kavis.local>",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -52,8 +52,8 @@
     "vitest": "^4.1.8"
   },
   "build": {
-    "appId": "com.janus.desktop",
-    "productName": "Janus",
+    "appId": "com.kavis.desktop",
+    "productName": "Kavis",
     "directories": {
       "output": "release"
     },

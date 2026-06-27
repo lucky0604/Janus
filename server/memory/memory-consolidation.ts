@@ -148,7 +148,7 @@ function scanRecentLogs(memoryDir: string, days: number): DailyLog[] {
         logs.push({ date, content });
       } catch (err) {
         // Skip unreadable logs but log so we know which ones failed
-        console.error(`[Janus memory] daily log ${date} unreadable:`, err instanceof Error ? err.message : err);
+        console.error(`[Kavis memory] daily log ${date} unreadable:`, err instanceof Error ? err.message : err);
       }
     }
   }
@@ -250,7 +250,7 @@ function trimMemoryMd(persistentPath: string): number {
 
     return removed;
   } catch (err) {
-    console.error('[Janus memory] trimMemoryMd failed:', err instanceof Error ? err.message : err);
+    console.error('[Kavis memory] trimMemoryMd failed:', err instanceof Error ? err.message : err);
     return 0;
   }
 }

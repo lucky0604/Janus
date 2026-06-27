@@ -101,7 +101,7 @@ async function duckduckgoSearch(query: string, maxResults: number): Promise<{ re
 
   const fetchOpts: FetchInit = {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; JanusBot/1.0)',
+      'User-Agent': 'Mozilla/5.0 (compatible; KavisBot/1.0)',
       'Accept': 'text/html',
     },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),

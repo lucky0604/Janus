@@ -117,7 +117,7 @@ export function appendToMemoryMd(persistentPath: string, section: string, conten
     atomicWrite(persistentPath, existing);
   } catch (err) {
     // Fail silently — memory writes should not crash the agent loop.
-    console.error('[Janus memory] appendToMemoryMd failed:', err instanceof Error ? err.message : err);
+    console.error('[Kavis memory] appendToMemoryMd failed:', err instanceof Error ? err.message : err);
   }
 }
 

@@ -118,9 +118,9 @@ function buildSummary(
   if (exchanges.length === 0) return null;
 
   const markdown = [
-    '# Session Context (Janus Handoff)',
+    '# Session Context (Kavis Handoff)',
     '',
-    `> This context was assembled from a Janus session. You are now the active agent (${targetCli}).`,
+    `> This context was assembled from a Kavis session. You are now the active agent (${targetCli}).`,
     `> Continue from where the previous agent(s) left off.`,
     '',
     HANDOFF_WARNING,

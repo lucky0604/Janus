@@ -1,4 +1,4 @@
-# Janus Code Mode — UI/UX Design Debt TODOS
+# Kavis Code Mode — UI/UX Design Debt TODOS
 
 以下是经过 `/plan-design-review` 奢华视觉与交互评审后，确定并追加的 UI/UX 设计债务与交互待办事项（TODOS）。这些待办项将由后续的研发人员在实现 Code Mode 时参考并贯彻。
 

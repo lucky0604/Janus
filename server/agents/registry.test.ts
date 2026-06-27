@@ -23,7 +23,7 @@ function registerAgent(
   try {
     systemPrompt = fs.readFileSync(promptPath, 'utf-8').trim();
   } catch {
-    console.warn(`[Janus test] Prompt file not found for "${promptFileName}.md"`);
+    console.warn(`[Kavis test] Prompt file not found for "${promptFileName}.md"`);
   }
   agentRegistry.register({
     id,

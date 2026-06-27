@@ -1,6 +1,6 @@
-# Janus Architecture
+# Kavis Architecture
 
-Janus is an Electron + React desktop application for AI-assisted development. This document describes the project's directory structure, naming conventions, and module organization after the v0.2.7 restructuring.
+Kavis is an Electron + React desktop application for AI-assisted development. This document describes the project's directory structure, naming conventions, and module organization after the v0.2.7 restructuring.
 
 ## Tech Stack
 
@@ -17,7 +17,7 @@ Janus is an Electron + React desktop application for AI-assisted development. Th
 ## Directory Structure
 
 ```
-Janus/
+Kavis/
 ├── electron/              # Electron main process
 │   ├── main.ts            # App lifecycle, window creation, IPC, settings persistence
 │   ├── preload.ts         # Context bridge (janusNative API)
@@ -224,7 +224,7 @@ chat-actions.ts        -> Approval response + settings hydration
 
 **Example: prod.ts (517 -> 120 lines)**
 ```
-prod.ts                -> createJanusServer + configureApiRoutes + entry
+prod.ts                -> createKavisServer + configureApiRoutes + entry
 router.ts              -> handleApiRequest (route dispatcher)
 handlers/              -> One file per endpoint group
 ```
@@ -242,11 +242,11 @@ export { shouldUpgradeName } from './session-names';
 
 ### Scene-Based Routing (No Router Library)
 
-Janus uses a simple scene store (`useSceneStore`) instead of react-router. Scenes are switched via `navigate('chat')` calls. This works because the app is a single-window desktop application with no URL bar.
+Kavis uses a simple scene store (`useSceneStore`) instead of react-router. Scenes are switched via `navigate('chat')` calls. This works because the app is a single-window desktop application with no URL bar.
 
 ### Embedded Server (No Separate Backend Process)
 
-The backend HTTP server runs inside the Electron app process. In dev mode, Vite serves the frontend with API routes injected via middleware. In production, `createJanusServer()` starts an HTTP server on a random port and the BrowserWindow loads `http://localhost:{port}`.
+The backend HTTP server runs inside the Electron app process. In dev mode, Vite serves the frontend with API routes injected via middleware. In production, `createKavisServer()` starts an HTTP server on a random port and the BrowserWindow loads `http://localhost:{port}`.
 
 ### SSE Streaming (Not WebSocket)
 

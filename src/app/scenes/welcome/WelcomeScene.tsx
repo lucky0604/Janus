@@ -7,7 +7,7 @@ export function WelcomeScene() {
   return (
     <div className={styles.welcome}>
       <div className={styles.hero}>
-        <div className={styles.brand}>Janus</div>
+        <div className={styles.brand}>Kavis</div>
         <p className={styles.tagline}>
           An AI workspace that reads, writes, and operates on your local projects.
         </p>

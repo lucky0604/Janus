@@ -13,9 +13,9 @@ export interface ToolDef {
 }
 
 /**
- * Build the OpenAI-shaped message array from Janus internal Messages.
+ * Build the OpenAI-shaped message array from Kavis internal Messages.
  *
- * The Janus UI stores many UI-only messages (event cards with empty content,
+ * The Kavis UI stores many UI-only messages (event cards with empty content,
  * pending tool placeholders, [Stopped] assistant stubs from interrupted streams).
  * Sending these to the upstream provider causes strict gateways (e.g. thor WAF)
  * to RST the connection before any response header — manifesting as
@@ -74,7 +74,7 @@ export function sanitizeMessagesForUpstream(messages: Message[]): OpenAIMessage[
 }
 
 /**
- * Convert Janus ToolDefinition array to OpenAI function tool definitions.
+ * Convert Kavis ToolDefinition array to OpenAI function tool definitions.
  */
 export function buildToolDefinitions(
   tools: Pick<ToolDefinition, 'name' | 'description' | 'parameters'>[]

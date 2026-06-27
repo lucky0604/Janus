@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { rejectOutsideWorkspaceShell } from './workspace-context';
 
 describe('rejectOutsideWorkspaceShell', () => {
-  const ws = '/Users/me/projects/Janus';
+  const ws = '/Users/me/projects/Kavis';
 
   it('blocks find starting from home', () => {
     const err = rejectOutsideWorkspaceShell(

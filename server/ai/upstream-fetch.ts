@@ -1,5 +1,5 @@
 /**
- * Shared upstream fetch for ALL LLM provider traffic in Janus
+ * Shared upstream fetch for ALL LLM provider traffic in Kavis
  * (streaming chat, title generation, health probes, any future provider tool).
  *
  * Why this exists

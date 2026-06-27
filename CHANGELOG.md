@@ -90,7 +90,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `better-sqlite3` 升级至 12.11.1，兼容 Electron 42 的 V8 API 变更
 - `vite build` 默认 `emptyOutDir` 清空 tsc 服务端编译产物 → 设置 `emptyOutDir: false`
 - 导入路径错误：`../server/prod.js`（tsx 引导脚本）→ `../dist/server/prod.js`（编译产物）
-- Prompt 文件在打包后路径漂移 → `createJanusServer` 新增 `promptsDir` 参数，从 `app.getAppPath()` 传入
+- Prompt 文件在打包后路径漂移 → `createKavisServer` 新增 `promptsDir` 参数，从 `app.getAppPath()` 传入
 - GPU vaapi/Vulkan 错误日志噪音 → 添加 `app.disableHardwareAcceleration()`
 - Dev 模式下 agent 注册缺失 → `configureApiRoutes` 中补充 `registerAllAgents` 调用
 - 版本号格式 `0.2.6.0` 修正为 semver 兼容的 `0.2.7`
@@ -129,7 +129,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Operating mode + agent role architecture replaces legacy agentId system
 - App layout refactored for scene-based routing (welcome, chat, code_mode, terminal_spike, settings)
 - Session sidebar redesigned for Work Mode / Code Mode session contexts
-- Server routes restructured with `createJanusServer` factory for standalone + Electron
+- Server routes restructured with `createKavisServer` factory for standalone + Electron
 - Chat store extended with `mode`/`role` state management and ProviderConfig
 - Session persistence expanded with `agentType`, `projectPath`, and scope-based listing
 
@@ -158,7 +158,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Chat UI redesign with modern visual hierarchy and enhanced accessibility
 - ARIA attributes on all interactive buttons for screen reader support
 - Code blocks with copy functionality and syntax highlighting (light + dark themes)
-- Message avatars system with sender badges ("You" / "Janus Agent")
+- Message avatars system with sender badges ("You" / "Kavis Agent")
 - Suggested prompt cards in empty state for quick task initiation
 - Sleek pulsing dots thinking loader replacing static text
 
@@ -203,7 +203,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - MCP server config (codegraph) and opencode integration
 
 ### Changed
-- Server refactored into createJanusServer factory pattern for standalone/Electron dual use
+- Server refactored into createKavisServer factory pattern for standalone/Electron dual use
 - Agent loop now integrates memory (resident prompt injection + per-turn recall) and evolution (nudge-driven skill crafting)
 - npm start now uses tsx to run TypeScript directly
 - SSE stream events extended with memory_recall, skill_review, evolution_event

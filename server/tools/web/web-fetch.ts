@@ -79,7 +79,7 @@ function singleFetch(url: string, timeout: number, externalSignal?: AbortSignal)
 
     const req = lib.get(url, {
       headers: {
-        'User-Agent': 'Janus/0.1.0',
+        'User-Agent': 'Kavis/0.1.0',
         Accept: 'text/html,application/xhtml+xml,*/*',
       },
       signal: controller.signal,

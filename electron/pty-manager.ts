@@ -23,11 +23,11 @@ function ensureSpawnHelperExecutable(): void {
       const stat = fs.statSync(helperPath);
       if (!(stat.mode & 0o111)) {
         fs.chmodSync(helperPath, 0o755);
-        console.log('[Janus PTY] Fixed spawn-helper permissions:', helperPath);
+        console.log('[Kavis PTY] Fixed spawn-helper permissions:', helperPath);
       }
     }
   } catch {
-    console.warn('[Janus PTY] Could not check spawn-helper permissions; pty.spawn may fail if node-pty needs a native rebuild.');
+    console.warn('[Kavis PTY] Could not check spawn-helper permissions; pty.spawn may fail if node-pty needs a native rebuild.');
   }
 }
 
@@ -38,9 +38,9 @@ type PtyModule = { spawn: (file: string, args: string[], options: IPtyForkOption
 let ptyModule: PtyModule | null = null;
 try {
   ptyModule = esmRequire('node-pty') as PtyModule;
-  console.log('[Janus PTY] node-pty loaded successfully');
+  console.log('[Kavis PTY] node-pty loaded successfully');
 } catch (err: unknown) {
-  console.error('[Janus PTY] Failed to load node-pty. Terminal escape pod will be unavailable.', err);
+  console.error('[Kavis PTY] Failed to load node-pty. Terminal escape pod will be unavailable.', err);
 }
 
 interface PtySession {
@@ -85,7 +85,7 @@ export function setupPtyHandlers(ipcMain: IpcMain, getMainWindow: () => BrowserW
         env: spawnEnv,
       });
 
-      console.log(`[Janus PTY] Spawned shell: ${shell} (PID: ${ptyProcess.pid}) for Session: ${id}`);
+      console.log(`[Kavis PTY] Spawned shell: ${shell} (PID: ${ptyProcess.pid}) for Session: ${id}`);
 
       const session: PtySession = {
         id,
@@ -113,7 +113,7 @@ export function setupPtyHandlers(ipcMain: IpcMain, getMainWindow: () => BrowserW
       });
 
       ptyProcess.onExit((exitCode: { exitCode: number; signal?: number }) => {
-        console.log(`[Janus PTY] Shell exited with code ${exitCode.exitCode} for Session: ${id}`);
+        console.log(`[Kavis PTY] Shell exited with code ${exitCode.exitCode} for Session: ${id}`);
         activeSessions.delete(id);
         const win = getMainWindow();
         if (win && !win.isDestroyed()) {
@@ -123,7 +123,7 @@ export function setupPtyHandlers(ipcMain: IpcMain, getMainWindow: () => BrowserW
 
       return { success: true, pid: ptyProcess.pid, shell };
     } catch (err: unknown) {
-      console.error('[Janus PTY] Error creating PTY process:', err);
+      console.error('[Kavis PTY] Error creating PTY process:', err);
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
@@ -190,7 +190,7 @@ export function setupPtyHandlers(ipcMain: IpcMain, getMainWindow: () => BrowserW
 function killProcessGroup(proc: IPty) {
   try {
     const pid = proc.pid;
-    console.log(`[Janus PTY] Cleaning up process group for PID: ${pid}`);
+    console.log(`[Kavis PTY] Cleaning up process group for PID: ${pid}`);
     if (process.platform !== 'win32') {
       // Negated PID kills the entire process group
       process.kill(-pid, 'SIGTERM');
@@ -218,7 +218,7 @@ function killProcessGroup(proc: IPty) {
  * Teardown all sessions on application exit
  */
 export function teardownAllPtySessions() {
-  console.log(`[Janus PTY] Tearing down ${activeSessions.size} active PTY sessions...`);
+  console.log(`[Kavis PTY] Tearing down ${activeSessions.size} active PTY sessions...`);
   for (const [, session] of activeSessions.entries()) {
     killProcessGroup(session.process);
   }

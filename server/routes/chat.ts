@@ -56,7 +56,7 @@ export function resolveModeRole(
   // Look up the tool set from the mode definition
   const modeDef = OPERATING_MODES.find((m) => m.id === resolvedMode);
   if (!modeDef) {
-    const msg = `[Janus] Unknown mode "${resolvedMode}", falling back to "work"`;
+    const msg = `[Kavis] Unknown mode "${resolvedMode}", falling back to "work"`;
     console.warn(msg);
     warnings.push(msg);
     const fallbackMode = OPERATING_MODES.find((m) => m.id === 'work')!;
@@ -70,7 +70,7 @@ export function resolveModeRole(
   const validNames = new Set(allTools.map((t) => t.name));
   const invalid = modeDef.tools.filter((n) => !validNames.has(n));
   if (invalid.length > 0) {
-    const msg = `[Janus] Mode "${resolvedMode}" references unknown tools: ${invalid.join(', ')}`;
+    const msg = `[Kavis] Mode "${resolvedMode}" references unknown tools: ${invalid.join(', ')}`;
     console.warn(msg);
     warnings.push(msg);
   }
@@ -119,7 +119,7 @@ export function resolveAgentTools(
   const agent = agentId ? agentRegistry.get(agentId) : agentRegistry.get('work');
 
   if (!agent && agentId) {
-    const msg = `[Janus] Unknown agentId "${agentId}", falling back to "work"`;
+    const msg = `[Kavis] Unknown agentId "${agentId}", falling back to "work"`;
     console.warn(msg);
     warnings.push(msg);
   }
@@ -131,7 +131,7 @@ export function resolveAgentTools(
     const validNames = new Set(allTools.map(t => t.name));
     const invalid = agentTools.filter(n => !validNames.has(n));
     if (invalid.length > 0) {
-      const msg = `[Janus] Agent "${resolvedAgent.id}" references unknown tools: ${invalid.join(', ')}`;
+      const msg = `[Kavis] Agent "${resolvedAgent.id}" references unknown tools: ${invalid.join(', ')}`;
       console.warn(msg);
       warnings.push(msg);
     }

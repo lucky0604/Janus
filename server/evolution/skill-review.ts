@@ -41,7 +41,7 @@ export function loadReviewQueue(janusDir: string): ReviewEntry[] {
     return JSON.parse(fs.readFileSync(reviewPath, 'utf-8'));
   } catch (err) {
     // Queue file corrupt — log so the user knows we reset to empty.
-    console.error('[Janus evolution] skill review queue unreadable, resetting:', err instanceof Error ? err.message : err);
+    console.error('[Kavis evolution] skill review queue unreadable, resetting:', err instanceof Error ? err.message : err);
     return [];
   }
 }
@@ -200,7 +200,7 @@ export function wasRejected(skillName: string, janusDir: string): boolean {
   } catch (err) {
     // SECURITY: if the rejection log is unreadable, we treat the skill as not
     // rejected. Log loudly so a tampered/corrupt rejection list is visible.
-    console.error('[Janus evolution] wasRejected check failed, allowing skill through:', err instanceof Error ? err.message : err);
+    console.error('[Kavis evolution] wasRejected check failed, allowing skill through:', err instanceof Error ? err.message : err);
     return false;
   }
 }

@@ -30,7 +30,7 @@ export function handleMemoryStatus(_req: IncomingMessage, res: ServerResponse): 
           'SELECT rowid as id, content, category, source FROM memory_index ORDER BY rowid DESC LIMIT 10'
         ).all() as Array<{ id: number; content: string; category: string; source: string }>);
       } catch (err) {
-        console.error('[Janus memory] memory/status DB read failed:', err instanceof Error ? err.message : err);
+        console.error('[Kavis memory] memory/status DB read failed:', err instanceof Error ? err.message : err);
       } finally {
         db?.close();
       }

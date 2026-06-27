@@ -20,7 +20,7 @@ export function registerAgentWithDir(
   try {
     systemPrompt = fs.readFileSync(promptPath, 'utf-8').trim();
   } catch {
-    console.warn(`[Janus] Prompt file not found: ${promptPath}`);
+    console.warn(`[Kavis] Prompt file not found: ${promptPath}`);
   }
   agentRegistry.register({
     id, name, description, systemPrompt,

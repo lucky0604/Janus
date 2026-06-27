@@ -64,7 +64,7 @@ export function initMemoryContext(workspacePath: string, sessionId: string): Mem
   // Ensure MEMORY.md exists
   const persistentPath = path.join(JANUS_DIR, MEMORY_MD);
   if (!fs.existsSync(persistentPath)) {
-    fs.writeFileSync(persistentPath, `# Janus Memory Index\n\n> Auto-generated memory index. Do not edit manually unless you know what you're doing.\n\n## Preferences\n\n## Facts\n\n## Patterns\n\n## Skills\n`, 'utf-8');
+    fs.writeFileSync(persistentPath, `# Kavis Memory Index\n\n> Auto-generated memory index. Do not edit manually unless you know what you're doing.\n\n## Preferences\n\n## Facts\n\n## Patterns\n\n## Skills\n`, 'utf-8');
   }
 
   // Initialize DB

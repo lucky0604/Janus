@@ -5,11 +5,11 @@ import { SceneArea } from './SceneArea';
 
 /** macOS only: gated by `titleBarStyle: 'hiddenInset'`. Other platforms keep native chrome. */
 function TitleBar() {
-  const platform = typeof window !== 'undefined' ? window.janusNative?.platform : undefined;
+  const platform = typeof window !== 'undefined' ? (window as Window & { kavisNative?: { platform?: string } }).kavisNative?.platform : undefined;
   if (platform !== 'darwin') return null;
   return (
     <div className={styles.titleBar}>
-      <span className={styles.titleBarBrand}>Janus</span>
+      <span className={styles.titleBarBrand}>Kavis</span>
     </div>
   );
 }

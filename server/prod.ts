@@ -21,13 +21,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---- Server factory: used by both standalone prod and Electron ----
 
-export interface JanusServer {
+export interface KavisServer {
   server: http.Server;
   port: number;
   close: () => Promise<void>;
 }
 
-export function createJanusServer(distDir?: string, port?: number, promptsDir?: string): Promise<JanusServer> {
+export function createKavisServer(distDir?: string, port?: number, promptsDir?: string): Promise<KavisServer> {
   const DIST = distDir || path.resolve(__dirname, '..', 'dist');
   const PROMPTS = promptsDir || path.join(__dirname, 'agents', 'prompts');
 
@@ -78,7 +78,7 @@ export function createJanusServer(distDir?: string, port?: number, promptsDir?: 
     server.listen(port || 0, () => {
       const addr = server.address();
       const actualPort = typeof addr === 'object' && addr ? addr.port : (port || 3000);
-      console.log(`[Janus] Server running on http://localhost:${actualPort}`);
+      console.log(`[Kavis] Server running on http://localhost:${actualPort}`);
 
       resolve({
         server,
@@ -113,8 +113,8 @@ const isDirectRun = (() => {
 
 if (isDirectRun) {
   const port = parseInt(process.env.PORT || '3000', 10);
-  createJanusServer(undefined, port).catch((err) => {
-    console.error('[Janus] Failed to start standalone server:', err);
+  createKavisServer(undefined, port).catch((err: Error) => {
+    console.error('[Kavis] Failed to start standalone server:', err);
     process.exit(1);
   });
 }

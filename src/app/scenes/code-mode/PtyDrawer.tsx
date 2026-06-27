@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLayoutStore } from '../../../stores/layout-store';
 import styles from './PtyDrawer.module.css';
 
-interface JanusNativeBridge {
+interface KavisNativeBridge {
   ptyCreate: (opts: { id: string; cwd?: string; cols?: number; rows?: number }) => Promise<{ success: boolean; pid?: number; error?: string }>;
   ptyWrite: (args: { id: string; data: string }) => Promise<unknown>;
   ptyResize: (args: { id: string; cols: number; rows: number }) => Promise<unknown>;
@@ -11,8 +11,8 @@ interface JanusNativeBridge {
   onPtyExit: (id: string, cb: (exitCode: { exitCode: number; signal?: number }) => void) => (() => void);
 }
 
-function getBridge(): JanusNativeBridge | null {
-  return (window as unknown as { janusNative?: JanusNativeBridge }).janusNative ?? null;
+function getBridge(): KavisNativeBridge | null {
+  return (window as unknown as { kavisNative?: KavisNativeBridge }).kavisNative ?? null;
 }
 
 interface Props {

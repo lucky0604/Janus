@@ -71,7 +71,7 @@ export async function llmMemoryFlush(
     commitFlushData(data, ctx);
   } catch (err) {
     // Flush failures are non-critical — don't crash, but log for diagnosis.
-    console.error('[Janus memory] llmMemoryFlush failed:', err instanceof Error ? err.message : err);
+    console.error('[Kavis memory] llmMemoryFlush failed:', err instanceof Error ? err.message : err);
   }
 }
 
