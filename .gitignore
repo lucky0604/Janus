@@ -41,7 +41,8 @@ logs
 # Releases
 release/
 
-# Janus runtime
+# Kavis runtime
+~/.kavis/
 ~/.janus/
 
 # Reference (external projects, not part of this repo)

@@ -4,6 +4,9 @@ import { useAgentStore } from './agent-store';
 import { useSessionStore } from './session-store';
 import { generateId, processSSEEvent } from './chat-sse-handler';
 import { respondToApproval as doRespondToApproval, hydrateSettings as doHydrateSettings } from './chat-actions';
+import { migrateLocalStorageKeys, readStorage, STORAGE_KEYS } from '../lib/storage-keys';
+
+migrateLocalStorageKeys();
 
 interface ChatState {
   messages: Message[];
@@ -43,10 +46,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   connectionError: false,
   errorMessage: null,
   lastError: null,
-  apiKey: localStorage.getItem('janus_api_key') || '',
-  baseUrl: localStorage.getItem('janus_base_url') || 'https://api.openai.com/v1',
-  modelName: localStorage.getItem('janus_model') || 'gpt-4o',
-  workspacePath: localStorage.getItem('janus_workspace') || '',
+  apiKey: readStorage('apiKey'),
+  baseUrl: readStorage('baseUrl', 'https://api.openai.com/v1'),
+  modelName: readStorage('model', 'gpt-4o'),
+  workspacePath: readStorage('workspace'),
   sessionId: generateId(),
 
   sendMessage: async (content: string) => {
@@ -218,26 +221,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setApiKey: (key: string) => {
-    localStorage.setItem('janus_api_key', key);
-    window.janusNative?.setSetting?.('janus_api_key', key);
+    localStorage.setItem(STORAGE_KEYS.apiKey, key);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.apiKey, key);
     set({ apiKey: key, errorMessage: null });
   },
 
   setBaseUrl: (url: string) => {
-    localStorage.setItem('janus_base_url', url);
-    window.janusNative?.setSetting?.('janus_base_url', url);
+    localStorage.setItem(STORAGE_KEYS.baseUrl, url);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.baseUrl, url);
     set({ baseUrl: url });
   },
 
   setModelName: (model: string) => {
-    localStorage.setItem('janus_model', model);
-    window.janusNative?.setSetting?.('janus_model', model);
+    localStorage.setItem(STORAGE_KEYS.model, model);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.model, model);
     set({ modelName: model });
   },
 
   setWorkspacePath: (path: string) => {
-    localStorage.setItem('janus_workspace', path);
-    window.janusNative?.setSetting?.('janus_workspace', path);
+    localStorage.setItem(STORAGE_KEYS.workspace, path);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.workspace, path);
     set({ workspacePath: path });
   },
 

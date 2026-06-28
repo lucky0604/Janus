@@ -26,15 +26,15 @@ const REVIEW_FILE = 'skill-reviews.json';
 /**
  * Get the path to the skill review queue file.
  */
-function getReviewPath(janusDir: string): string {
-  return path.join(janusDir, REVIEW_FILE);
+function getReviewPath(kavisHomeDir: string): string {
+  return path.join(kavisHomeDir, REVIEW_FILE);
 }
 
 /**
  * Load the current review queue from disk.
  */
-export function loadReviewQueue(janusDir: string): ReviewEntry[] {
-  const reviewPath = getReviewPath(janusDir);
+export function loadReviewQueue(kavisHomeDir: string): ReviewEntry[] {
+  const reviewPath = getReviewPath(kavisHomeDir);
   if (!fs.existsSync(reviewPath)) return [];
 
   try {
@@ -49,8 +49,8 @@ export function loadReviewQueue(janusDir: string): ReviewEntry[] {
 /**
  * Save the review queue to disk.
  */
-function saveReviewQueue(janusDir: string, queue: ReviewEntry[]): void {
-  const reviewPath = getReviewPath(janusDir);
+function saveReviewQueue(kavisHomeDir: string, queue: ReviewEntry[]): void {
+  const reviewPath = getReviewPath(kavisHomeDir);
   const dir = path.dirname(reviewPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -63,22 +63,22 @@ function saveReviewQueue(janusDir: string, queue: ReviewEntry[]): void {
 /**
  * Add a skill to the review queue.
  */
-export function submitForReview(skill: SkillDraft, janusDir: string): void {
-  const queue = loadReviewQueue(janusDir);
+export function submitForReview(skill: SkillDraft, kavisHomeDir: string): void {
+  const queue = loadReviewQueue(kavisHomeDir);
 
   // Check for duplicate
   const existing = queue.find((e) => e.skill.id === skill.id);
   if (existing) return;
 
   queue.push({ skill });
-  saveReviewQueue(janusDir, queue);
+  saveReviewQueue(kavisHomeDir, queue);
 }
 
 /**
  * Add multiple skills to the review queue.
  */
-export function submitManyForReview(skills: SkillDraft[], janusDir: string): void {
-  const queue = loadReviewQueue(janusDir);
+export function submitManyForReview(skills: SkillDraft[], kavisHomeDir: string): void {
+  const queue = loadReviewQueue(kavisHomeDir);
   const existingIds = new Set(queue.map((e) => e.skill.id));
 
   for (const skill of skills) {
@@ -87,22 +87,22 @@ export function submitManyForReview(skills: SkillDraft[], janusDir: string): voi
     }
   }
 
-  saveReviewQueue(janusDir, queue);
+  saveReviewQueue(kavisHomeDir, queue);
 }
 
 /**
  * Get pending reviews (skills awaiting user action).
  */
-export function getPendingReviews(janusDir: string): ReviewEntry[] {
-  const queue = loadReviewQueue(janusDir);
+export function getPendingReviews(kavisHomeDir: string): ReviewEntry[] {
+  const queue = loadReviewQueue(kavisHomeDir);
   return queue.filter((e) => e.skill.status === 'pending');
 }
 
 /**
  * Approve a skill and apply it.
  */
-export function approveSkill(skillId: string, janusDir: string, note?: string): SkillDraft | null {
-  const queue = loadReviewQueue(janusDir);
+export function approveSkill(skillId: string, kavisHomeDir: string, note?: string): SkillDraft | null {
+  const queue = loadReviewQueue(kavisHomeDir);
   const entry = queue.find((e) => e.skill.id === skillId);
 
   if (!entry) return null;
@@ -111,10 +111,10 @@ export function approveSkill(skillId: string, janusDir: string, note?: string): 
   entry.reviewedAt = new Date().toISOString();
   entry.reviewNote = note;
 
-  saveReviewQueue(janusDir, queue);
+  saveReviewQueue(kavisHomeDir, queue);
 
   // Apply the approved skill to the skill library
-  applySkill(entry.skill, janusDir);
+  applySkill(entry.skill, kavisHomeDir);
 
   return entry.skill;
 }
@@ -122,8 +122,8 @@ export function approveSkill(skillId: string, janusDir: string, note?: string): 
 /**
  * Reject a skill.
  */
-export function rejectSkill(skillId: string, janusDir: string, note?: string): SkillDraft | null {
-  const queue = loadReviewQueue(janusDir);
+export function rejectSkill(skillId: string, kavisHomeDir: string, note?: string): SkillDraft | null {
+  const queue = loadReviewQueue(kavisHomeDir);
   const entry = queue.find((e) => e.skill.id === skillId);
 
   if (!entry) return null;
@@ -132,20 +132,20 @@ export function rejectSkill(skillId: string, janusDir: string, note?: string): S
   entry.reviewedAt = new Date().toISOString();
   entry.reviewNote = note;
 
-  saveReviewQueue(janusDir, queue);
+  saveReviewQueue(kavisHomeDir, queue);
 
   // Record rejection to avoid re-suggesting
-  recordRejection(entry.skill, janusDir);
+  recordRejection(entry.skill, kavisHomeDir);
 
   return entry.skill;
 }
 
 /**
  * Apply an approved skill to the skill library.
- * Writes the skill content to .janus/skills/.
+ * Writes the skill content to ~/.kavis/skills/.
  */
-function applySkill(skill: SkillDraft, janusDir: string): void {
-  const skillsDir = path.join(janusDir, 'skills');
+function applySkill(skill: SkillDraft, kavisHomeDir: string): void {
+  const skillsDir = path.join(kavisHomeDir, 'skills');
   if (!fs.existsSync(skillsDir)) {
     fs.mkdirSync(skillsDir, { recursive: true });
   }
@@ -159,8 +159,8 @@ function applySkill(skill: SkillDraft, janusDir: string): void {
 /**
  * Record a rejection to prevent re-suggesting the same skill.
  */
-function recordRejection(skill: SkillDraft, janusDir: string): void {
-  const rejectionsPath = path.join(janusDir, 'rejected-skills.json');
+function recordRejection(skill: SkillDraft, kavisHomeDir: string): void {
+  const rejectionsPath = path.join(kavisHomeDir, 'rejected-skills.json');
 
   let rejections: Array<{ name: string; reason: string; rejectedAt: string }> = [];
   if (fs.existsSync(rejectionsPath)) {
@@ -188,8 +188,8 @@ function recordRejection(skill: SkillDraft, janusDir: string): void {
 /**
  * Check if a skill name has been previously rejected.
  */
-export function wasRejected(skillName: string, janusDir: string): boolean {
-  const rejectionsPath = path.join(janusDir, 'rejected-skills.json');
+export function wasRejected(skillName: string, kavisHomeDir: string): boolean {
+  const rejectionsPath = path.join(kavisHomeDir, 'rejected-skills.json');
   if (!fs.existsSync(rejectionsPath)) return false;
 
   try {

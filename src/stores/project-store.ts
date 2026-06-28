@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ProjectMeta } from '../../shared/types';
+import { migrateLocalStorageKeys, readStorage, STORAGE_KEYS } from '../lib/storage-keys';
 
 interface ProjectState {
   projects: ProjectMeta[];
@@ -12,12 +13,11 @@ interface ProjectState {
   fetchProjects: () => Promise<void>;
 }
 
-const STORAGE_KEY = 'janus_projects';
-const ACTIVE_PROJECT_KEY = 'janus_active_project_id';
+migrateLocalStorageKeys();
 
 function loadFromStorage(): ProjectMeta[] {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
+    const data = readStorage('projects');
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
@@ -26,7 +26,8 @@ function loadFromStorage(): ProjectMeta[] {
 
 function loadActiveProjectId(): string | null {
   try {
-    return localStorage.getItem(ACTIVE_PROJECT_KEY);
+    const id = readStorage('activeProjectId');
+    return id || null;
   } catch {
     return null;
   }
@@ -34,11 +35,11 @@ function loadActiveProjectId(): string | null {
 
 function saveToStorage(projects: ProjectMeta[], activeProjectId: string | null): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+    localStorage.setItem(STORAGE_KEYS.projects, JSON.stringify(projects));
     if (activeProjectId) {
-      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+      localStorage.setItem(STORAGE_KEYS.activeProjectId, activeProjectId);
     } else {
-      localStorage.removeItem(ACTIVE_PROJECT_KEY);
+      localStorage.removeItem(STORAGE_KEYS.activeProjectId);
     }
   } catch {
     // Silently fail - localStorage might be full or disabled

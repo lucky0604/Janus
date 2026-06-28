@@ -20,7 +20,7 @@ Kavis is an Electron + React desktop application for AI-assisted development. Th
 Kavis/
 ├── electron/              # Electron main process
 │   ├── main.ts            # App lifecycle, window creation, IPC, settings persistence
-│   ├── preload.ts         # Context bridge (janusNative API)
+│   ├── preload.ts         # Context bridge (kavisNative API)
 │   └── pty-manager.ts     # PTY session management via node-pty
 │
 ├── src/                   # Frontend (React SPA)

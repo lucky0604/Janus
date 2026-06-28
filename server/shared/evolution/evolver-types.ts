@@ -5,8 +5,8 @@
  */
 
 export interface EvolverConfig {
-  /** Path to project's .janus directory */
-  janusDir: string;
+  /** Path to Kavis home directory (~/.kavis) */
+  kavisHomeDir: string;
   /** Evolver strategy */
   strategy?: 'balanced' | 'innovate' | 'harden' | 'repair-only';
   /** Timeout in ms (default 120000 = 2 min) */

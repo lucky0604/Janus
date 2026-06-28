@@ -11,7 +11,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
-contextBridge.exposeInMainWorld('kavisNative', {
+const nativeBridge = {
   /** Get the platform (darwin, win32, linux) */
   platform: process.platform,
 
@@ -79,4 +79,6 @@ contextBridge.exposeInMainWorld('kavisNative', {
   setSetting: (key: string, value: string): Promise<boolean> => {
     return ipcRenderer.invoke('settings:set', key, value);
   },
-});
+};
+
+contextBridge.exposeInMainWorld('kavisNative', nativeBridge);

@@ -11,8 +11,8 @@ import type { SkillDraft } from '../../../shared/types';
 import { isEvolverAvailable, runEvolver, type EvolverConfig } from './evolver-bridge';
 
 export interface SkillCrafterConfig {
-  /** Path to project's .janus directory */
-  janusDir: string;
+  /** Path to Kavis home directory (~/.kavis) */
+  kavisHomeDir: string;
   /** Whether to use Evolver for skill generation (falls back to heuristic) */
   useEvolver?: boolean;
 }
@@ -55,7 +55,7 @@ async function craftWithEvolver(
   config: SkillCrafterConfig
 ): Promise<SkillDraft[]> {
   const evolverConfig: EvolverConfig = {
-    janusDir: config.janusDir,
+    kavisHomeDir: config.kavisHomeDir,
     strategy: 'balanced',
   };
 

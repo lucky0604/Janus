@@ -1,8 +1,18 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import { KAVIS_HOME, SESSIONS_DIR, migrateLegacyHomeDir } from './kavis-paths';
 
-export const SESSIONS_DIR = path.join(os.homedir(), '.janus', 'sessions');
+export {
+  KAVIS_HOME,
+  LEGACY_JANUS_HOME,
+  LEGACY_WORKSPACE_DIR,
+  KAVIS_WORKSPACE_DIR,
+  SESSIONS_DIR,
+  PROJECTS_FILE,
+  LOG_DIR,
+  migrateLegacyHomeDir,
+  resolveWorkspaceDataDir,
+} from './kavis-paths';
 
 export function normalizeWorkspacePath(workspacePath?: string): string | undefined {
   if (!workspacePath) return undefined;
@@ -13,6 +23,13 @@ export function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+}
+
+/** Ensure Kavis home exists (runs legacy migration first). */
+export function ensureKavisHome(): void {
+  migrateLegacyHomeDir();
+  ensureDir(KAVIS_HOME);
+  ensureDir(SESSIONS_DIR);
 }
 
 export function atomicWrite(filePath: string, data: string): void {

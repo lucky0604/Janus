@@ -1,10 +1,13 @@
 import { create } from 'zustand';
+import { migrateLocalStorageKeys, readStorage, STORAGE_KEYS } from '../lib/storage-keys';
 
 type Theme = 'dark' | 'light';
 
+migrateLocalStorageKeys();
+
 function getInitialTheme(): Theme {
   try {
-    return (localStorage.getItem('janus_theme') as Theme) || 'dark';
+    return (readStorage('theme', 'dark') as Theme) || 'dark';
   } catch {
     return 'dark';
   }
@@ -21,21 +24,22 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   toggle: () => {
     const next = get().theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('janus_theme', next);
-    window.janusNative?.setSetting?.('janus_theme', next);
+    localStorage.setItem(STORAGE_KEYS.theme, next);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.theme, next);
     document.documentElement.setAttribute('data-theme', next);
     set({ theme: next });
   },
 
   hydrateFromNative: async () => {
-    if (typeof window === 'undefined' || !window.janusNative?.getSettings) {
+    if (typeof window === 'undefined' || !window.kavisNative?.getSettings) {
       return;
     }
     try {
-      const settings = await window.janusNative.getSettings();
-      if (settings.janus_theme && (settings.janus_theme === 'dark' || settings.janus_theme === 'light')) {
-        const theme = settings.janus_theme as Theme;
-        localStorage.setItem('janus_theme', theme);
+      const settings = await window.kavisNative.getSettings();
+      const themeValue = settings[STORAGE_KEYS.theme];
+      if (themeValue && (themeValue === 'dark' || themeValue === 'light')) {
+        const theme = themeValue as Theme;
+        localStorage.setItem(STORAGE_KEYS.theme, theme);
         document.documentElement.setAttribute('data-theme', theme);
         set({ theme });
       }

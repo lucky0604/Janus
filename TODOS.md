@@ -44,7 +44,7 @@
 >
 > 已完整实现：`stashActiveChanges()` 执行 `git stash create` → `git reset --hard HEAD` → `git clean -fd`；
 > `applyStashedChanges()` 使用 HEAD 校验 + `--ff-only` 合并 + 冲突检测回滚；
-> `.janus/handoff.json` 写前日志原子写入。
+> `.kavis/handoff.json` 写前日志原子写入。
 
 ---
 

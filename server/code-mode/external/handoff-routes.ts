@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { readHandoff, writeHandoff, deleteHandoff, createHandoffContext, ensureGitignore } from './handoff-helper';
 import { stashActiveChanges, applyStashedChanges, isGitRepo } from './git-syncer';
 import { detectAllClis } from './cli-registry';
+import { resolveWorkspaceDataDir } from '../../shared/persistence/kavis-paths';
 import type { CliToolId, HandoffTodo } from '../../../shared/types';
 
 function json(res: ServerResponse, status: number, data: unknown): void {
@@ -30,6 +31,7 @@ export function handleCodeModeRoutes(
   }
 
   if (urlPath === '/api/code-mode/handoff/status' && req.method === 'GET') {
+    resolveWorkspaceDataDir(workspacePath);
     const handoff = readHandoff(workspacePath);
     json(res, 200, { active: handoff !== null, handoff });
     return true;

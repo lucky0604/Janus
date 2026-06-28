@@ -1,10 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import type { ProjectMeta } from '../../../shared/types';
-
-const PROJECTS_FILE = path.join(os.homedir(), '.janus', 'projects.json');
+import { PROJECTS_FILE, migrateLegacyHomeDir } from './kavis-paths';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -36,6 +34,7 @@ async function getGitStatus(projectPath: string): Promise<{ branch: string; isCl
 }
 
 export async function loadProjects(): Promise<ProjectMeta[]> {
+  migrateLegacyHomeDir();
   ensureDir(path.dirname(PROJECTS_FILE));
   if (!fs.existsSync(PROJECTS_FILE)) {
     return [];

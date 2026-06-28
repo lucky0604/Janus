@@ -55,8 +55,8 @@ export async function runEvolver(config: EvolverConfig): Promise<EvolverResult> 
     };
   }
 
-  // Ensure .janus/.evolver directory exists
-  const evolverDir = path.join(config.janusDir, '.evolver');
+  // Ensure ~/.kavis/.evolver directory exists
+  const evolverDir = path.join(config.kavisHomeDir, '.evolver');
   if (!fs.existsSync(evolverDir)) {
     fs.mkdirSync(evolverDir, { recursive: true });
   }
@@ -74,7 +74,7 @@ export async function runEvolver(config: EvolverConfig): Promise<EvolverResult> 
 
   return new Promise((resolve) => {
     const proc = spawn(binary.cmd, args, {
-      cwd: path.dirname(config.janusDir),
+      cwd: path.dirname(config.kavisHomeDir),
       env: { ...process.env },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -140,10 +140,10 @@ export async function runEvolver(config: EvolverConfig): Promise<EvolverResult> 
  */
 export async function scanForSignals(
   _memoryDir: string,
-  janusDir: string
+  kavisHomeDir: string
 ): Promise<EvolverResult> {
   return runEvolver({
-    janusDir,
+    kavisHomeDir,
     strategy: 'balanced',
     timeout: 60000,
   });

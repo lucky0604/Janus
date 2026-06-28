@@ -6,19 +6,13 @@ export function useNativeBridge() {
   const selectFolder = async (): Promise<string | null> => {
     if (typeof window === 'undefined') return null;
 
-    const win = window as Window & {
-      janusNative?: {
-        selectFolder?: () => Promise<string | null>;
-      };
-    };
-
-    if (!win.janusNative?.selectFolder) {
+    if (!window.kavisNative?.selectFolder) {
       console.warn('[useNativeBridge] Electron IPC bridge not available');
       return null;
     }
 
     try {
-      return await win.janusNative.selectFolder();
+      return await window.kavisNative.selectFolder();
     } catch (err) {
       console.error('[useNativeBridge] selectFolder failed:', err);
       return null;

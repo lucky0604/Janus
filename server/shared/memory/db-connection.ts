@@ -6,11 +6,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
+import { KAVIS_HOME, migrateLegacyHomeDir } from '../persistence/kavis-paths';
 
-const JANUS_DIR = path.join(os.homedir(), '.janus');
 const MEMORY_DB = 'memory.db';
 
 // ESM-safe __dirname (Node ESM has no global __dirname)
@@ -23,7 +22,9 @@ let _db: Database.Database | null = null;
 export function getDb(dbPath?: string): Database.Database {
   if (_db && !dbPath) return _db;
 
-  const resolvedPath = dbPath || path.join(JANUS_DIR, MEMORY_DB);
+  migrateLegacyHomeDir();
+
+  const resolvedPath = dbPath || path.join(KAVIS_HOME, MEMORY_DB);
   const dir = path.dirname(resolvedPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -54,4 +55,4 @@ export function closeDb(): void {
   }
 }
 
-export { JANUS_DIR, MEMORY_DB };
+export { KAVIS_HOME, MEMORY_DB };

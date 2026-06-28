@@ -14,7 +14,7 @@ import fs from 'fs';
 import path from 'path';
 
 import type { MemoryContext } from './memory-types';
-import { JANUS_DIR, MEMORY_DB, getDb, closeDb } from './db-connection';
+import { KAVIS_HOME, MEMORY_DB, getDb, closeDb } from './db-connection';
 
 // Re-export DB lifecycle
 export { closeDb };
@@ -50,19 +50,19 @@ const MEMORY_DIR = 'memory';
 
 export function initMemoryContext(workspacePath: string, sessionId: string): MemoryContext {
   const projectPath = workspacePath;
-  const dbPath = path.join(JANUS_DIR, MEMORY_DB);
+  const dbPath = path.join(KAVIS_HOME, MEMORY_DB);
 
-  // Ensure ~/.janus/ and ~/.janus/memory/ exist
-  if (!fs.existsSync(JANUS_DIR)) {
-    fs.mkdirSync(JANUS_DIR, { recursive: true });
+  // Ensure ~/.kavis/ and ~/.kavis/memory/ exist
+  if (!fs.existsSync(KAVIS_HOME)) {
+    fs.mkdirSync(KAVIS_HOME, { recursive: true });
   }
-  const memoryDir = path.join(JANUS_DIR, MEMORY_DIR);
+  const memoryDir = path.join(KAVIS_HOME, MEMORY_DIR);
   if (!fs.existsSync(memoryDir)) {
     fs.mkdirSync(memoryDir, { recursive: true });
   }
 
   // Ensure MEMORY.md exists
-  const persistentPath = path.join(JANUS_DIR, MEMORY_MD);
+  const persistentPath = path.join(KAVIS_HOME, MEMORY_MD);
   if (!fs.existsSync(persistentPath)) {
     fs.writeFileSync(persistentPath, `# Kavis Memory Index\n\n> Auto-generated memory index. Do not edit manually unless you know what you're doing.\n\n## Preferences\n\n## Facts\n\n## Patterns\n\n## Skills\n`, 'utf-8');
   }

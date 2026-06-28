@@ -97,7 +97,7 @@ async function startServer(): Promise<number | undefined> {
 
   // Production: start embedded server
   const distDir = path.resolve(__dirname, '..', 'dist');
-  const promptsDir = path.join(app.getAppPath(), 'server', 'agents', 'prompts');
+  const promptsDir = path.join(app.getAppPath(), 'server', 'shared', 'agents', 'prompts');
 
   try {
     const { createKavisServer } = await import('../dist/server/prod.js');
@@ -179,10 +179,32 @@ function getSettingsPath(): string {
 function loadSettingsFile(): Record<string, string> {
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
-    return JSON.parse(raw);
+    const settings = JSON.parse(raw) as Record<string, string>;
+    return migrateSettingsKeys(settings);
   } catch {
     return {};
   }
+}
+
+/** Migrate legacy janus_* settings keys to kavis_* */
+function migrateSettingsKeys(settings: Record<string, string>): Record<string, string> {
+  let changed = false;
+  const migrated: Record<string, string> = { ...settings };
+
+  for (const [key, value] of Object.entries(settings)) {
+    if (!key.startsWith('janus_')) continue;
+    const newKey = 'kavis_' + key.slice('janus_'.length);
+    if (!(newKey in migrated)) {
+      migrated[newKey] = value;
+    }
+    delete migrated[key];
+    changed = true;
+  }
+
+  if (changed) {
+    saveSettingsFile(migrated);
+  }
+  return migrated;
 }
 
 function saveSettingsFile(data: Record<string, string>): void {

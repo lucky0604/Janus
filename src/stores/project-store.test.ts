@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useProjectStore } from './project-store';
 import type { ProjectMeta } from '../../shared/types';
+import { STORAGE_KEYS } from '../lib/storage-keys';
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -60,7 +61,7 @@ describe('useProjectStore', () => {
       const project = createMockProject();
       useProjectStore.getState().addProject(project);
 
-      const stored = localStorage.getItem('janus_projects');
+      const stored = localStorage.getItem(STORAGE_KEYS.projects);
       expect(stored).toBeTruthy();
       const parsed = JSON.parse(stored!);
       expect(parsed).toHaveLength(1);

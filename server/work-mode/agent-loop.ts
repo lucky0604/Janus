@@ -98,7 +98,7 @@ export async function* executeDialogTurn(
   const residentMemory = loadResidentMemory(memCtx);
   const nudgeEngine = new NudgeEngine();
   const patternDetector = new PatternDetector();
-  const janusDir = path.dirname(memCtx.persistentPath);
+  const kavisHomeDir = path.dirname(memCtx.persistentPath);
 
   if (!messagesArr.some((m) => m.role === 'system')) {
     const basePrompt = resolveSystemPrompt(config);
@@ -205,10 +205,10 @@ export async function* executeDialogTurn(
       const patterns = patternDetector.detect(messagesArr);
       if (patterns.length > 0) {
         // Craft skill drafts from detected patterns
-        const drafts = await craftSkill(patterns, { janusDir, useEvolver: true });
+        const drafts = await craftSkill(patterns, { kavisHomeDir, useEvolver: true });
         if (drafts.length > 0) {
           // Submit drafts for user review
-          submitManyForReview(drafts, janusDir);
+          submitManyForReview(drafts, kavisHomeDir);
           // Notify frontend about new skill drafts
           yield {
             type: 'skill_review',
@@ -226,7 +226,7 @@ export async function* executeDialogTurn(
       }
 
       // Also check if there are pending reviews the user should see
-      const pending = getPendingReviews(janusDir);
+      const pending = getPendingReviews(kavisHomeDir);
       if (pending.length > 0) {
         yield {
           type: 'skill_review',

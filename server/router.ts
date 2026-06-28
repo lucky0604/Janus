@@ -68,6 +68,7 @@ export function handleApiRequest(req: IncomingMessage, res: ServerResponse): Pro
 
   if (pathname.startsWith('/code-mode/') || pathname.startsWith('/onboarding/')) {
     const rawWorkspace = url.searchParams.get('workspace')
+      || process.env.KAVIS_WORKSPACE
       || process.env.JANUS_WORKSPACE
       || '';
     const codeModeWorkspace = rawWorkspace ? path.resolve(rawWorkspace) : process.cwd();

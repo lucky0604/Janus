@@ -1,13 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import Database from 'better-sqlite3';
+import { KAVIS_HOME, migrateLegacyHomeDir } from '../shared/persistence/kavis-paths';
 
 export function handleMemoryStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
-    const homeDir = os.homedir();
-    const memoryDir = path.join(homeDir, '.janus');
+    migrateLegacyHomeDir();
+    const memoryDir = KAVIS_HOME;
     const dbPath = path.join(memoryDir, 'memory.db');
     const memoryMdPath = path.join(memoryDir, 'MEMORY.md');
 

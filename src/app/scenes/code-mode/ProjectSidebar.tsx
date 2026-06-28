@@ -39,9 +39,9 @@ export function ProjectSidebar() {
       const folderPath = await selectFolder();
       if (!folderPath) {
         const bridgeMissing = typeof window !== 'undefined'
-          && !(window as Window & { kavisNative?: { selectFolder?: unknown } }).kavisNative?.selectFolder;
+          && !window.kavisNative?.selectFolder;
         if (bridgeMissing) {
-          setError('Folder picker requires the Electron app. Run Janus as a desktop app to import projects.');
+          setError('Folder picker requires the Electron app. Run Kavis as a desktop app to import projects.');
         }
         return;
       }

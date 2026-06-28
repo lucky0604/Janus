@@ -19,7 +19,7 @@ export function TerminalSpikeScene() {
 
   // 1. Verify JanusNative Bridge
   useEffect(() => {
-    if (window.janusNative && typeof window.janusNative.ptyCreate === 'function') {
+    if (window.kavisNative && typeof window.kavisNative.ptyCreate === 'function') {
       setBridgeStatus('loaded');
     } else {
       setBridgeStatus('missing');
@@ -69,7 +69,7 @@ export function TerminalSpikeScene() {
     let unsubscribeExit: (() => void) | null = null;
 
     // Call native API to spawn PTY
-    window.janusNative.ptyCreate({
+    window.kavisNative.ptyCreate({
       id,
       cols: term.cols,
       rows: term.rows,
@@ -80,12 +80,12 @@ export function TerminalSpikeScene() {
         setPtyStatus('active');
 
         // Subscribe to PTY data
-        unsubscribeData = window.janusNative.onPtyData(id, (data) => {
+        unsubscribeData = window.kavisNative.onPtyData(id, (data) => {
           term.write(data);
         });
 
         // Subscribe to PTY exit
-        unsubscribeExit = window.janusNative.onPtyExit(id, (exitRes) => {
+        unsubscribeExit = window.kavisNative.onPtyExit(id, (exitRes) => {
           term.write(`\r\n\r\n[Janus PTY] Shell exited with code ${exitRes.exitCode}\r\n`);
           setPtyStatus('exited');
           setPtyPid(null);
@@ -93,7 +93,7 @@ export function TerminalSpikeScene() {
 
         // Write user input to PTY
         term.onData((data) => {
-          window.janusNative.ptyWrite({ id, data });
+          window.kavisNative.ptyWrite({ id, data });
         });
 
         term.focus();
@@ -115,7 +115,7 @@ export function TerminalSpikeScene() {
         const cols = xtermRef.current.cols;
         const rows = xtermRef.current.rows;
         
-        window.janusNative.ptyResize({
+        window.kavisNative.ptyResize({
           id: sessionIdRef.current,
           cols,
           rows
@@ -137,7 +137,7 @@ export function TerminalSpikeScene() {
       if (unsubscribeExit) unsubscribeExit();
 
       if (sessionIdRef.current) {
-        window.janusNative.ptyKill({ id: sessionIdRef.current });
+        window.kavisNative.ptyKill({ id: sessionIdRef.current });
       }
 
       term.dispose();
@@ -184,7 +184,7 @@ export function TerminalSpikeScene() {
           <div className={styles.errorScreen}>
             <h3>Bridge Initialization Failed</h3>
             <p>
-              无法在 <code>window.janusNative</code> 中找到 PTY 核心 API。请确保应用正在 Electron 中运行，而非标准浏览器中。
+              无法在 <code>window.kavisNative</code> 中找到 PTY 核心 API。请确保应用正在 Electron 中运行，而非标准浏览器中。
             </p>
           </div>
         )}

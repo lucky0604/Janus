@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import type { CliToolId } from '../../../shared/types';
+import { SESSIONS_DIR } from '../../shared/persistence/kavis-paths';
 
 export interface CliNativeSession {
   cliId: CliToolId;
@@ -11,8 +11,6 @@ export interface CliNativeSession {
 }
 
 type CliSessionMap = Partial<Record<CliToolId, CliNativeSession>>;
-
-const SESSIONS_DIR = path.join(os.homedir(), '.janus', 'sessions');
 
 function atomicWrite(filePath: string, data: string): void {
   const dir = path.dirname(filePath);
@@ -24,12 +22,12 @@ function atomicWrite(filePath: string, data: string): void {
   fs.renameSync(tmp, filePath);
 }
 
-function getTrackerPath(janusSessionId: string): string {
-  return path.join(SESSIONS_DIR, janusSessionId, 'cli-sessions.json');
+function getTrackerPath(sessionId: string): string {
+  return path.join(SESSIONS_DIR, sessionId, 'cli-sessions.json');
 }
 
-export function loadCliSessions(janusSessionId: string): CliSessionMap {
-  const filePath = getTrackerPath(janusSessionId);
+export function loadCliSessions(sessionId: string): CliSessionMap {
+  const filePath = getTrackerPath(sessionId);
   if (!fs.existsSync(filePath)) return {};
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as CliSessionMap;
@@ -39,12 +37,12 @@ export function loadCliSessions(janusSessionId: string): CliSessionMap {
 }
 
 export function saveCliSession(
-  janusSessionId: string,
+  sessionId: string,
   cliId: CliToolId,
   nativeId: string,
 ): void {
-  const filePath = getTrackerPath(janusSessionId);
-  const existing = loadCliSessions(janusSessionId);
+  const filePath = getTrackerPath(sessionId);
+  const existing = loadCliSessions(sessionId);
   existing[cliId] = {
     cliId,
     nativeId,
@@ -55,11 +53,11 @@ export function saveCliSession(
 }
 
 export function markTurnCompleted(
-  janusSessionId: string,
+  sessionId: string,
   cliId: CliToolId,
 ): void {
-  const filePath = getTrackerPath(janusSessionId);
-  const existing = loadCliSessions(janusSessionId);
+  const filePath = getTrackerPath(sessionId);
+  const existing = loadCliSessions(sessionId);
   if (existing[cliId]) {
     existing[cliId]!.lastTurnCompleted = true;
     atomicWrite(filePath, JSON.stringify(existing, null, 2));
@@ -67,11 +65,11 @@ export function markTurnCompleted(
 }
 
 export function markTurnDirty(
-  janusSessionId: string,
+  sessionId: string,
   cliId: CliToolId,
 ): void {
-  const filePath = getTrackerPath(janusSessionId);
-  const existing = loadCliSessions(janusSessionId);
+  const filePath = getTrackerPath(sessionId);
+  const existing = loadCliSessions(sessionId);
   if (existing[cliId]) {
     existing[cliId]!.lastTurnCompleted = false;
     atomicWrite(filePath, JSON.stringify(existing, null, 2));
@@ -79,15 +77,15 @@ export function markTurnDirty(
 }
 
 export function getNativeSessionId(
-  janusSessionId: string,
+  sessionId: string,
   cliId: CliToolId,
 ): CliNativeSession | undefined {
-  const sessions = loadCliSessions(janusSessionId);
+  const sessions = loadCliSessions(sessionId);
   return sessions[cliId];
 }
 
-export function getLastUsedCli(janusSessionId: string): CliToolId | undefined {
-  const sessions = loadCliSessions(janusSessionId);
+export function getLastUsedCli(sessionId: string): CliToolId | undefined {
+  const sessions = loadCliSessions(sessionId);
   let latest: CliNativeSession | undefined;
   for (const session of Object.values(sessions)) {
     if (!session) continue;

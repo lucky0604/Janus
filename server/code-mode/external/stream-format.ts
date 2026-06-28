@@ -30,6 +30,7 @@ export function determineResumeMode(
     if (
       tracked
       && tracked.nativeId
+      && !tracked.nativeId.startsWith('__kavis_')
       && !tracked.nativeId.startsWith('__janus_')
       && tracked.lastTurnCompleted
     ) {

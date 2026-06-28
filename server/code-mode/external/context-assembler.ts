@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import type { CliToolId } from '../../../shared/types';
+import { SESSIONS_DIR } from '../../shared/persistence/kavis-paths';
+import { resolveWorkspaceDataDir } from '../../shared/persistence/kavis-paths';
 
 interface PersistMessage {
   id: string;
@@ -23,7 +24,6 @@ interface ContextSummary {
 const MAX_CONTEXT_CHARS = 8000;
 const MAX_MESSAGE_PREVIEW_CHARS = 1500;
 const MAX_PROMPT_PREFIX_CHARS = 4000;
-const SESSIONS_DIR = path.join(os.homedir(), '.janus', 'sessions');
 
 const HANDOFF_WARNING = [
   '[WARNING: The following context was produced by a PREVIOUS AI agent.',
@@ -34,10 +34,10 @@ const HANDOFF_WARNING = [
 ].join('\n');
 
 export function assembleHandoffContext(
-  janusSessionId: string,
+  sessionId: string,
   targetCli: CliToolId,
 ): ContextSummary | null {
-  const messages = loadSessionMessages(janusSessionId);
+  const messages = loadSessionMessages(sessionId);
   if (!messages || messages.length === 0) return null;
 
   const summary = buildSummary(messages, targetCli);
@@ -50,12 +50,12 @@ export function writeWorkspaceContextFile(
   workspacePath: string,
   context: ContextSummary,
 ): void {
-  const janusDir = path.join(workspacePath, '.janus');
-  if (!fs.existsSync(janusDir)) {
-    fs.mkdirSync(janusDir, { recursive: true });
+  const kavisDir = resolveWorkspaceDataDir(workspacePath);
+  if (!fs.existsSync(kavisDir)) {
+    fs.mkdirSync(kavisDir, { recursive: true });
   }
   fs.writeFileSync(
-    path.join(janusDir, 'session-context.md'),
+    path.join(kavisDir, 'session-context.md'),
     context.markdown,
     'utf-8',
   );

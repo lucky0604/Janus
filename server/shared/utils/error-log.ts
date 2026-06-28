@@ -1,9 +1,8 @@
 import fs from 'fs';
 import { promises as fsp } from 'fs';
 import path from 'path';
-import os from 'os';
+import { LOG_DIR, migrateLegacyHomeDir } from '../persistence/kavis-paths';
 
-const LOG_DIR = path.join(os.homedir(), '.janus');
 const LOG_FILE = path.join(LOG_DIR, 'errors.log');
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -24,6 +23,7 @@ let ensured = false;
 function ensureDir(): void {
   if (ensured) return;
   try {
+    migrateLegacyHomeDir();
     fs.mkdirSync(LOG_DIR, { recursive: true });
     ensured = true;
   } catch {

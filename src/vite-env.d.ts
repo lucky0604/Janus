@@ -5,7 +5,7 @@ declare module '*.module.css' {
   export default classes;
 }
 
-interface JanusNativeBridge {
+interface KavisNativeBridge {
   platform: string;
   selectFolder: () => Promise<string | null>;
   getVersion: () => string;
@@ -21,5 +21,5 @@ interface JanusNativeBridge {
 }
 
 interface Window {
-  janusNative: JanusNativeBridge;
+  kavisNative: KavisNativeBridge;
 }

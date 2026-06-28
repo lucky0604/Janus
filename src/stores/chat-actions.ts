@@ -2,6 +2,7 @@
  * Extracted actions for chat-store to keep it under 300 lines.
  */
 import type { Message } from '../../shared/types';
+import { STORAGE_KEYS } from '../lib/storage-keys';
 
 interface ChatStoreApi {
   set: (partial: Record<string, unknown>) => void;
@@ -50,21 +51,21 @@ export async function respondToApproval(
 export async function hydrateSettings(
   set: (partial: Record<string, unknown>) => void,
 ): Promise<void> {
-  if (typeof window === 'undefined' || !window.janusNative?.getSettings) return;
+  if (typeof window === 'undefined' || !window.kavisNative?.getSettings) return;
   try {
-    const nativeSettings = await window.janusNative.getSettings();
+    const nativeSettings = await window.kavisNative.getSettings();
     const updates: Record<string, string> = {};
-    if (nativeSettings.janus_api_key) updates.apiKey = nativeSettings.janus_api_key;
-    if (nativeSettings.janus_base_url) updates.baseUrl = nativeSettings.janus_base_url;
-    if (nativeSettings.janus_model) updates.modelName = nativeSettings.janus_model;
-    if (nativeSettings.janus_workspace) updates.workspacePath = nativeSettings.janus_workspace;
+    if (nativeSettings[STORAGE_KEYS.apiKey]) updates.apiKey = nativeSettings[STORAGE_KEYS.apiKey];
+    if (nativeSettings[STORAGE_KEYS.baseUrl]) updates.baseUrl = nativeSettings[STORAGE_KEYS.baseUrl];
+    if (nativeSettings[STORAGE_KEYS.model]) updates.modelName = nativeSettings[STORAGE_KEYS.model];
+    if (nativeSettings[STORAGE_KEYS.workspace]) updates.workspacePath = nativeSettings[STORAGE_KEYS.workspace];
 
     if (Object.keys(updates).length > 0) {
       set(updates);
-      if (updates.apiKey) localStorage.setItem('janus_api_key', updates.apiKey);
-      if (updates.baseUrl) localStorage.setItem('janus_base_url', updates.baseUrl);
-      if (updates.modelName) localStorage.setItem('janus_model', updates.modelName);
-      if (updates.workspacePath) localStorage.setItem('janus_workspace', updates.workspacePath);
+      if (updates.apiKey) localStorage.setItem(STORAGE_KEYS.apiKey, updates.apiKey);
+      if (updates.baseUrl) localStorage.setItem(STORAGE_KEYS.baseUrl, updates.baseUrl);
+      if (updates.modelName) localStorage.setItem(STORAGE_KEYS.model, updates.modelName);
+      if (updates.workspacePath) localStorage.setItem(STORAGE_KEYS.workspace, updates.workspacePath);
     }
   } catch {
     // IPC unavailable — keep localStorage values

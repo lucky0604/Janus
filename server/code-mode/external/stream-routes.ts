@@ -9,6 +9,7 @@ import { determineResumeMode, buildCliArgs, type CliInvocationContext } from './
 import { SSEWriter } from './stream-sse';
 import type { CliToolId, Message } from '../../../shared/types';
 import { loadSession, saveSession } from '../../shared/persistence/session-store';
+import { resolveWorkspaceDataDir } from '../../shared/persistence/kavis-paths';
 import { executeCustomAgentTurn } from '../native/index';
 import { resolveModeRole } from '../../routes/chat';
 import { agentRegistry } from '../../shared/agents/registry';
@@ -60,6 +61,8 @@ export function handleStreamRoutes(
           return;
         }
 
+        resolveWorkspaceDataDir(resolvedWorkspace);
+
         if (cliId === 'kavis-code') {
           const apiKey = (req.headers['x-api-key'] as string) || process.env.OPENAI_API_KEY || '';
           if (!apiKey) {
@@ -72,7 +75,7 @@ export function handleStreamRoutes(
 
           // Always record CLI usage so getLastUsedCli works
           if (sessionId) {
-            saveCliSession(sessionId, 'kavis-code', `__janus_${Date.now()}`);
+            saveCliSession(sessionId, 'kavis-code', `__kavis_${Date.now()}`);
           }
 
           loadSession(sessionId || '').then(async (sessionData) => {
@@ -279,7 +282,7 @@ export function handleStreamRoutes(
 
         // Always record CLI usage so getLastUsedCli works even if session_meta never arrives
         if (sessionId) {
-          saveCliSession(sessionId, cliId, `__janus_${Date.now()}`);
+          saveCliSession(sessionId, cliId, `__kavis_${Date.now()}`);
         }
 
         runner.start(config.binaryName, args, resolvedWorkspace);

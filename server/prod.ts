@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { handleApiRequest } from './router';
 import { registerAllAgents } from './handlers/agents-handler';
+import { ensureKavisHome } from './shared/persistence/file-utils';
 
 // Register all tools (side-effect imports)
 import './shared/tools/read-file';
@@ -29,8 +30,10 @@ export interface KavisServer {
 }
 
 export function createKavisServer(distDir?: string, port?: number, promptsDir?: string): Promise<KavisServer> {
+  ensureKavisHome();
+
   const DIST = distDir || path.resolve(__dirname, '..', 'dist');
-  const PROMPTS = promptsDir || path.join(__dirname, 'agents', 'prompts');
+  const PROMPTS = promptsDir || path.join(__dirname, 'shared', 'agents', 'prompts');
 
   registerAllAgents(PROMPTS);
 
@@ -93,7 +96,8 @@ export function createKavisServer(distDir?: string, port?: number, promptsDir?: 
 // ---- Vite dev server integration ----
 
 export function configureApiRoutes(viteServer: { middlewares: { use: (path: string, handler: (req: IncomingMessage, res: ServerResponse) => void) => void } }) {
-  registerAllAgents(path.join(__dirname, 'agents', 'prompts'));
+  ensureKavisHome();
+  registerAllAgents(path.join(__dirname, 'shared', 'agents', 'prompts'));
   viteServer.middlewares.use('/api', (req: IncomingMessage, res: ServerResponse) => {
     handleApiRequest(req, res).catch(() => {
       res.writeHead(500, { 'Content-Type': 'application/json' });

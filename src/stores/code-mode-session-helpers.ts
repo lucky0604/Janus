@@ -1,9 +1,8 @@
 import type { Message } from '../../shared/types';
 import type { CodeModeMessage } from './code-mode-session-types';
+import { migrateLocalStorageKeys, readStorage, STORAGE_KEYS } from '../lib/storage-keys';
 
-// ── localStorage keys ──
-const ACTIVE_SESSION_KEY = 'janus_code_mode_session_id';
-const ACTIVE_SESSION_PROJECT_KEY = 'janus_code_mode_session_project';
+migrateLocalStorageKeys();
 
 // ── Module-level atomic guards (exported as object so store can mutate properties) ──
 /**
@@ -22,7 +21,8 @@ export const sessionGuards = {
 
 export function loadActiveSessionId(): string | null {
   try {
-    return localStorage.getItem(ACTIVE_SESSION_KEY);
+    const id = readStorage('codeModeSessionId');
+    return id || null;
   } catch {
     return null;
   }
@@ -31,13 +31,13 @@ export function loadActiveSessionId(): string | null {
 export function saveActiveSessionId(sessionId: string | null, projectPath: string | null = null): void {
   try {
     if (sessionId) {
-      localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+      localStorage.setItem(STORAGE_KEYS.codeModeSessionId, sessionId);
       if (projectPath) {
-        localStorage.setItem(ACTIVE_SESSION_PROJECT_KEY, projectPath);
+        localStorage.setItem(STORAGE_KEYS.codeModeSessionProject, projectPath);
       }
     } else {
-      localStorage.removeItem(ACTIVE_SESSION_KEY);
-      localStorage.removeItem(ACTIVE_SESSION_PROJECT_KEY);
+      localStorage.removeItem(STORAGE_KEYS.codeModeSessionId);
+      localStorage.removeItem(STORAGE_KEYS.codeModeSessionProject);
     }
   } catch {
     // ignore
@@ -46,7 +46,8 @@ export function saveActiveSessionId(sessionId: string | null, projectPath: strin
 
 export function loadActiveSessionProjectPath(): string | null {
   try {
-    return localStorage.getItem(ACTIVE_SESSION_PROJECT_KEY);
+    const path = readStorage('codeModeSessionProject');
+    return path || null;
   } catch {
     return null;
   }

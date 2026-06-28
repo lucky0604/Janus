@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { migrateLocalStorageKeys, readStorage, STORAGE_KEYS } from '../lib/storage-keys';
 
 interface LayoutState {
   sidebarWidth: number;
@@ -9,9 +10,11 @@ interface LayoutState {
   setPtyHeight: (h: number) => void;
 }
 
-function loadNum(key: string, fallback: number): number {
+migrateLocalStorageKeys();
+
+function loadNum(key: keyof typeof STORAGE_KEYS, fallback: number): number {
   try {
-    const v = localStorage.getItem(key);
+    const v = readStorage(key);
     return v ? Number(v) : fallback;
   } catch {
     return fallback;
@@ -19,20 +22,20 @@ function loadNum(key: string, fallback: number): number {
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
-  sidebarWidth: loadNum('janus_sidebar_w', 260),
-  inspectorWidth: loadNum('janus_inspector_w', 380),
-  ptyHeight: loadNum('janus_pty_h', 40),
+  sidebarWidth: loadNum('sidebarWidth', 260),
+  inspectorWidth: loadNum('inspectorWidth', 380),
+  ptyHeight: loadNum('ptyHeight', 40),
 
   setSidebarWidth: (w) => {
-    localStorage.setItem('janus_sidebar_w', String(w));
+    localStorage.setItem(STORAGE_KEYS.sidebarWidth, String(w));
     set({ sidebarWidth: w });
   },
   setInspectorWidth: (w) => {
-    localStorage.setItem('janus_inspector_w', String(w));
+    localStorage.setItem(STORAGE_KEYS.inspectorWidth, String(w));
     set({ inspectorWidth: w });
   },
   setPtyHeight: (h) => {
-    localStorage.setItem('janus_pty_h', String(h));
+    localStorage.setItem(STORAGE_KEYS.ptyHeight, String(h));
     set({ ptyHeight: h });
   },
 }));

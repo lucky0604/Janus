@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     react(),
     {
-      name: 'janus-api-routes',
+      name: 'kavis-api-routes',
       configureServer(server) {
         configureApiRoutes(server);
       },

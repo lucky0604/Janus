@@ -13,9 +13,7 @@ import { isEvolverAvailable } from '../evolution/evolver-bridge';
 import type { MemoryContext } from '../memory/memory-types';
 import type { ToolContext } from '../../../shared/types';
 import path from 'path';
-import os from 'os';
-
-const FALLBACK_JANUS_DIR = path.join(os.homedir(), '.janus');
+import { KAVIS_HOME, migrateLegacyHomeDir } from '../persistence/kavis-paths';
 
 toolRegistry.register({
   name: 'evolve',
@@ -42,11 +40,13 @@ toolRegistry.register({
   execute: async (args, context: ToolContext) => {
     const action = args.action as string;
 
-    // Resolve janusDir from memoryContext (project-scoped) or fallback to global ~/.janus
+    migrateLegacyHomeDir();
+
+    // Resolve kavis home from memoryContext or fallback to global ~/.kavis
     const memCtx = context.memoryContext as MemoryContext | undefined;
-    const janusDir = memCtx
+    const kavisHomeDir = memCtx
       ? path.dirname(memCtx.persistentPath)
-      : FALLBACK_JANUS_DIR;
+      : KAVIS_HOME;
 
     try {
       switch (action) {
@@ -61,7 +61,7 @@ toolRegistry.register({
           };
         }
         case 'review': {
-          const pending = getPendingReviews(janusDir);
+          const pending = getPendingReviews(kavisHomeDir);
           return {
             success: true,
             data: {
@@ -75,7 +75,7 @@ toolRegistry.register({
           if (!draftId) {
             return { success: false, error: 'draftId is required for approve action' };
           }
-          const skill = approveSkill(draftId, janusDir, args.note as string | undefined);
+          const skill = approveSkill(draftId, kavisHomeDir, args.note as string | undefined);
           if (!skill) {
             return { success: false, error: `Draft not found: ${draftId}` };
           }
@@ -89,7 +89,7 @@ toolRegistry.register({
           if (!draftId) {
             return { success: false, error: 'draftId is required for reject action' };
           }
-          const skill = rejectSkill(draftId, janusDir, args.note as string | undefined);
+          const skill = rejectSkill(draftId, kavisHomeDir, args.note as string | undefined);
           if (!skill) {
             return { success: false, error: `Draft not found: ${draftId}` };
           }
