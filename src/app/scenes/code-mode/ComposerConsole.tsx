@@ -48,9 +48,14 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       .then((data: { clis: CliDetectionResult[] }) => {
         if (cancelled) return;
         setCliResults(data.clis);
-        if (!useCodeModeStore.getState().activeCli) {
-          const available = data.clis.find((c) => c.available);
-          if (available) setActiveCli(available.id);
+        // If the persisted/default activeCli is not actually available on this
+        // machine, fall back to the first available CLI. Without this check
+        // the picker shows an empty model list and the apiKey guard misfires.
+        const current = useCodeModeStore.getState().activeCli;
+        const currentIsAvailable = data.clis.some((c) => c.id === current && c.available);
+        if (!currentIsAvailable) {
+          const fallback = data.clis.find((c) => c.available);
+          if (fallback) setActiveCli(fallback.id);
         }
       })
       .catch(() => {})
@@ -112,7 +117,12 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       const useOverride = chat.codeModeUseOverride;
       const effectiveApiKey = useOverride ? (chat.codeModeApiKey.trim() || chat.apiKey) : chat.apiKey;
       const effectiveBaseUrl = useOverride ? (chat.codeModeBaseUrl.trim() || chat.baseUrl) : chat.baseUrl;
-      const effectiveModel = activeModel || (useOverride ? (chat.codeModeModel.trim() || chat.modelName) : chat.modelName);
+      // activeModel is already the single source of truth (resolveEffectiveModel
+      // handles picked / override-for-kavis-code / cli-default / cli-first).
+      // Only fall back to chat.modelName when activeModel is empty (no cliResult
+      // and no override) — never re-apply codeModeModel here, which would leak
+      // the kavis-code override into other CLIs (codex/claude/opencode).
+      const effectiveModel = activeModel || chat.modelName;
 
       if (activeCli === 'kavis-code' && !effectiveApiKey) {
         const errMsg = '尚未配置 API Key，请先到设置中填写。';
