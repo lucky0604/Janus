@@ -56,9 +56,9 @@ export class SSEWriter {
   /** Write a done event and close the connection. */
   writeDone(code: number | null): void {
     if (this.ended) return;
-    this.ended = true;
     this.flushPending();
     this.writeRaw(JSON.stringify({ type: 'done', data: { code } }));
+    this.ended = true;
     this.res.end();
   }
 
@@ -71,8 +71,8 @@ export class SSEWriter {
   /** End the SSE response without writing a done event. */
   end(): void {
     if (this.ended) return;
-    this.ended = true;
     this.flushPending();
+    this.ended = true;
     this.res.end();
   }
 
