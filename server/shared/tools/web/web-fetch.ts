@@ -82,15 +82,11 @@ function singleFetch(url: string, timeout: number, externalSignal?: AbortSignal)
     const safeLookup: LookupFunction = (hostname, opts, callback) => {
       dnsLookup(hostname, opts as dns.LookupOneOptions, (err, address, family) => {
         if (err) {
-          (callback as (e: NodeJS.ErrnoException | null, a: string, f: number) => void)(err, address as string, family as number);
+          callback(err, '', 0);
           return;
         }
         if (typeof address === 'string' && isPrivateIP(address)) {
-          (callback as (e: NodeJS.ErrnoException | null, a: string, f: number) => void)(
-            new Error(`SSRF blocked: ${hostname} resolved to private IP ${address}`) as NodeJS.ErrnoException,
-            address,
-            family as number,
-          );
+          callback(new Error(`SSRF blocked: ${hostname} resolved to private IP ${address}`), '', 0);
           return;
         }
         (callback as (e: NodeJS.ErrnoException | null, a: string, f: number) => void)(err, address as string, family as number);

@@ -32,6 +32,7 @@ interface ChatState {
   codeModeApiKey: string;
   codeModeBaseUrl: string;
   codeModeModel: string;
+  settingsHydrated: boolean;
 
   // Actions
   sendMessage: (content: string) => Promise<void>;
@@ -45,6 +46,7 @@ interface ChatState {
   setCodeModeApiKey: (key: string) => void;
   setCodeModeBaseUrl: (url: string) => void;
   setCodeModeModel: (model: string) => void;
+  setSettingsHydrated: (v: boolean) => void;
   clearError: () => void;
   addMessage: (msg: Message) => void;
   switchAgent: (agentId: string) => void;
@@ -71,6 +73,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   codeModeApiKey: '',
   codeModeBaseUrl: readStorage('codeModeBaseUrl'),
   codeModeModel: readStorage('codeModeModel'),
+  settingsHydrated: false,
 
   sendMessage: async (content: string) => {
     const {
@@ -84,6 +87,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       codeModeApiKey,
       codeModeBaseUrl,
       codeModeModel,
+      settingsHydrated,
     } = get();
     const { activeMode, activeRole } = useAgentStore.getState();
 
@@ -92,7 +96,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const effectiveBaseUrl = useCodeOverride ? (codeModeBaseUrl.trim() || baseUrl) : baseUrl;
     const effectiveModel = useCodeOverride ? (codeModeModel.trim() || modelName) : modelName;
 
-    if (!effectiveApiKey) {
+    // Defer apiKey guard until IPC hydration completes — otherwise the
+    // codeModeApiKey may be '' for a few ms while hydrateSettings is in flight,
+    // producing a false "API key required" error when the key exists.
+    if (settingsHydrated && !effectiveApiKey) {
       set({ errorMessage: 'API key required' });
       return;
     }
@@ -303,6 +310,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     window.kavisNative?.setSetting?.(STORAGE_KEYS.codeModeModel, model);
     set({ codeModeModel: model });
   },
+
+  setSettingsHydrated: (v: boolean) => set({ settingsHydrated: v }),
 
   clearError: () => set({ errorMessage: null, connectionError: false, lastError: null }),
 

@@ -77,7 +77,9 @@ export async function hydrateSettings(
         localStorage.setItem(STORAGE_KEYS.codeModeUseOverride, updates.codeModeUseOverride ? 'true' : 'false');
       }
     }
+    set({ settingsHydrated: true });
   } catch {
+    set({ settingsHydrated: true });
     // IPC unavailable — keep localStorage values
   }
 }
