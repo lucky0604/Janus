@@ -42,18 +42,25 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       .then((r) => r.json())
       .then((data: { clis: CliDetectionResult[] }) => {
         setCliResults(data.clis);
+        const chat = useChatStore.getState();
         // Only set defaults if no CLI is already selected (preserves user choice)
         if (!activeCli) {
           const available = data.clis.find((c) => c.available);
           if (available) {
             setActiveCli(available.id);
-            setActiveModel(available.defaultModel ?? available.models?.[0] ?? '');
+            const userModel = available.id === 'kavis-code' && chat.codeModeUseOverride && chat.codeModeModel.trim()
+              ? chat.codeModeModel.trim()
+              : (available.defaultModel ?? available.models?.[0] ?? '');
+            setActiveModel(userModel);
           }
         } else {
           // Restore model list for the already-selected CLI
           const current = data.clis.find((c) => c.id === activeCli);
           if (current && !activeModel) {
-            setActiveModel(current.defaultModel ?? current.models?.[0] ?? '');
+            const userModel = current.id === 'kavis-code' && chat.codeModeUseOverride && chat.codeModeModel.trim()
+              ? chat.codeModeModel.trim()
+              : (current.defaultModel ?? current.models?.[0] ?? '');
+            setActiveModel(userModel);
           }
         }
       })
@@ -65,7 +72,11 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
     const id = e.target.value as CliToolId;
     setActiveCli(id);
     const cli = cliResults.find((c) => c.id === id);
-    setActiveModel(cli?.defaultModel ?? cli?.models?.[0] ?? '');
+    const chat = useChatStore.getState();
+    const userModel = id === 'kavis-code' && chat.codeModeUseOverride && chat.codeModeModel.trim()
+      ? chat.codeModeModel.trim()
+      : (cli?.defaultModel ?? cli?.models?.[0] ?? '');
+    setActiveModel(userModel);
   };
 
   const handleSend = async () => {
@@ -199,7 +210,11 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
   const handleCliSheetSelect = useCallback((id: string) => {
     setActiveCli(id as CliToolId);
     const cli = cliResults.find((c) => c.id === id);
-    setActiveModel(cli?.defaultModel ?? cli?.models?.[0] ?? '');
+    const chat = useChatStore.getState();
+    const userModel = id === 'kavis-code' && chat.codeModeUseOverride && chat.codeModeModel.trim()
+      ? chat.codeModeModel.trim()
+      : (cli?.defaultModel ?? cli?.models?.[0] ?? '');
+    setActiveModel(userModel);
     setSheetType(null);
   }, [cliResults, setActiveCli, setActiveModel]);
 

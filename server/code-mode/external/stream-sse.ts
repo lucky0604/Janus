@@ -10,6 +10,7 @@ export class SSEWriter {
   private res: ServerResponse;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingText = '';
+  private ended = false;
 
   constructor(res: ServerResponse, streamKey: string, workspace: string) {
     this.res = res;
@@ -27,6 +28,7 @@ export class SSEWriter {
    * text_delta events are debounced (50ms); all others are written immediately.
    */
   writeEvent(event: NdjsonEvent): void {
+    if (this.ended) return;
     if (event.type === 'text_delta') {
       const text = (event.data as { text?: string })?.text ?? '';
       this.pendingText += text;
@@ -53,6 +55,8 @@ export class SSEWriter {
 
   /** Write a done event and close the connection. */
   writeDone(code: number | null): void {
+    if (this.ended) return;
+    this.ended = true;
     this.flushPending();
     this.writeRaw(JSON.stringify({ type: 'done', data: { code } }));
     this.res.end();
@@ -60,11 +64,14 @@ export class SSEWriter {
 
   /** Write a raw SSE data line. */
   writeRaw(data: string): void {
+    if (this.ended) return;
     this.res.write(`data: ${data}\n\n`);
   }
 
   /** End the SSE response without writing a done event. */
   end(): void {
+    if (this.ended) return;
+    this.ended = true;
     this.flushPending();
     this.res.end();
   }
