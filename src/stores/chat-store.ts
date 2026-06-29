@@ -8,6 +8,14 @@ import { migrateLocalStorageKeys, readStorage, STORAGE_KEYS } from '../lib/stora
 
 migrateLocalStorageKeys();
 
+// API keys must never persist in renderer localStorage — they live only in
+// the Electron main process safeStorage and are hydrated into memory at boot.
+// Strip any plaintext keys left over from older builds.
+if (typeof localStorage !== 'undefined') {
+  localStorage.removeItem(STORAGE_KEYS.apiKey);
+  localStorage.removeItem(STORAGE_KEYS.codeModeApiKey);
+}
+
 interface ChatState {
   messages: Message[];
   isStreaming: boolean;
@@ -20,6 +28,10 @@ interface ChatState {
   modelName: string;
   workspacePath: string;
   sessionId: string;
+  codeModeUseOverride: boolean;
+  codeModeApiKey: string;
+  codeModeBaseUrl: string;
+  codeModeModel: string;
 
   // Actions
   sendMessage: (content: string) => Promise<void>;
@@ -29,6 +41,10 @@ interface ChatState {
   setBaseUrl: (url: string) => void;
   setModelName: (model: string) => void;
   setWorkspacePath: (path: string) => void;
+  setCodeModeUseOverride: (v: boolean) => void;
+  setCodeModeApiKey: (key: string) => void;
+  setCodeModeBaseUrl: (url: string) => void;
+  setCodeModeModel: (model: string) => void;
   clearError: () => void;
   addMessage: (msg: Message) => void;
   switchAgent: (agentId: string) => void;
@@ -46,16 +62,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
   connectionError: false,
   errorMessage: null,
   lastError: null,
-  apiKey: readStorage('apiKey'),
+  apiKey: '',
   baseUrl: readStorage('baseUrl', 'https://api.openai.com/v1'),
   modelName: readStorage('model', 'gpt-4o'),
   workspacePath: readStorage('workspace'),
   sessionId: generateId(),
+  codeModeUseOverride: readStorage('codeModeUseOverride') === 'true',
+  codeModeApiKey: '',
+  codeModeBaseUrl: readStorage('codeModeBaseUrl'),
+  codeModeModel: readStorage('codeModeModel'),
 
   sendMessage: async (content: string) => {
-    const { apiKey, baseUrl, modelName, workspacePath, sessionId, messages } = get();
+    const {
+      apiKey,
+      baseUrl,
+      modelName,
+      workspacePath,
+      sessionId,
+      messages,
+      codeModeUseOverride,
+      codeModeApiKey,
+      codeModeBaseUrl,
+      codeModeModel,
+    } = get();
     const { activeMode, activeRole } = useAgentStore.getState();
-    if (!apiKey) {
+
+    const useCodeOverride = activeMode === 'code' && codeModeUseOverride;
+    const effectiveApiKey = useCodeOverride ? (codeModeApiKey.trim() || apiKey) : apiKey;
+    const effectiveBaseUrl = useCodeOverride ? (codeModeBaseUrl.trim() || baseUrl) : baseUrl;
+    const effectiveModel = useCodeOverride ? (codeModeModel.trim() || modelName) : modelName;
+
+    if (!effectiveApiKey) {
       set({ errorMessage: 'API key required' });
       return;
     }
@@ -87,14 +124,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
+          'X-API-Key': effectiveApiKey,
         },
         body: JSON.stringify({
           messages: requestMessages,
           workspacePath: workspacePath.trim(),
           sessionId,
-          baseUrl: baseUrl.trim(),
-          modelName: modelName.trim(),
+          baseUrl: effectiveBaseUrl.trim(),
+          modelName: effectiveModel.trim(),
           agentId: activeMode === 'code' ? `${activeMode}/${activeRole}` : activeMode,
           mode: activeMode,
           role: activeMode === 'code' ? activeRole : undefined,
@@ -221,7 +258,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setApiKey: (key: string) => {
-    localStorage.setItem(STORAGE_KEYS.apiKey, key);
     window.kavisNative?.setSetting?.(STORAGE_KEYS.apiKey, key);
     set({ apiKey: key, errorMessage: null });
   },
@@ -242,6 +278,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
     localStorage.setItem(STORAGE_KEYS.workspace, path);
     window.kavisNative?.setSetting?.(STORAGE_KEYS.workspace, path);
     set({ workspacePath: path });
+  },
+
+  setCodeModeUseOverride: (v: boolean) => {
+    const str = v ? 'true' : 'false';
+    localStorage.setItem(STORAGE_KEYS.codeModeUseOverride, str);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.codeModeUseOverride, str);
+    set({ codeModeUseOverride: v });
+  },
+
+  setCodeModeApiKey: (key: string) => {
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.codeModeApiKey, key);
+    set({ codeModeApiKey: key });
+  },
+
+  setCodeModeBaseUrl: (url: string) => {
+    localStorage.setItem(STORAGE_KEYS.codeModeBaseUrl, url);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.codeModeBaseUrl, url);
+    set({ codeModeBaseUrl: url });
+  },
+
+  setCodeModeModel: (model: string) => {
+    localStorage.setItem(STORAGE_KEYS.codeModeModel, model);
+    window.kavisNative?.setSetting?.(STORAGE_KEYS.codeModeModel, model);
+    set({ codeModeModel: model });
   },
 
   clearError: () => set({ errorMessage: null, connectionError: false, lastError: null }),

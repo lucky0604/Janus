@@ -1,6 +1,7 @@
-import http from 'http';
+import http, { type IncomingMessage } from 'http';
 import https from 'https';
 import dns from 'dns';
+import type { LookupFunction } from 'net';
 import { URL } from 'url';
 import { toolRegistry } from '../registry';
 import { validateUrlForFetch, validateRedirectChain, isPrivateIP } from './url-validator';
@@ -61,7 +62,6 @@ function singleFetch(url: string, timeout: number, externalSignal?: AbortSignal)
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const isHttps = parsed.protocol === 'https:';
-    const lib = isHttps ? https : http;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
@@ -77,28 +77,36 @@ function singleFetch(url: string, timeout: number, externalSignal?: AbortSignal)
       }, { once: true });
     }
 
-    const req = lib.get(url, {
+    // SSRF protection: re-check the resolved IP at request time
+    // to prevent DNS rebinding / TOCTOU attacks
+    const safeLookup: LookupFunction = (hostname, opts, callback) => {
+      dnsLookup(hostname, opts as dns.LookupOneOptions, (err, address, family) => {
+        if (err) {
+          (callback as (e: NodeJS.ErrnoException | null, a: string, f: number) => void)(err, address as string, family as number);
+          return;
+        }
+        if (typeof address === 'string' && isPrivateIP(address)) {
+          (callback as (e: NodeJS.ErrnoException | null, a: string, f: number) => void)(
+            new Error(`SSRF blocked: ${hostname} resolved to private IP ${address}`) as NodeJS.ErrnoException,
+            address,
+            family as number,
+          );
+          return;
+        }
+        (callback as (e: NodeJS.ErrnoException | null, a: string, f: number) => void)(err, address as string, family as number);
+      });
+    };
+
+    const requestOptions: https.RequestOptions = {
       headers: {
         'User-Agent': 'Kavis/0.1.0',
         Accept: 'text/html,application/xhtml+xml,*/*',
       },
       signal: controller.signal,
-      lookup: (hostname, opts, callback) => {
-        dnsLookup(hostname, opts, (err, address, family) => {
-          if (err) {
-            callback(err, address, family);
-            return;
-          }
-          // SSRF protection: re-check the resolved IP at request time
-          // to prevent DNS rebinding / TOCTOU attacks
-          if (typeof address === 'string' && isPrivateIP(address)) {
-            callback(new Error(`SSRF blocked: ${hostname} resolved to private IP ${address}`), address, family);
-            return;
-          }
-          callback(err, address, family);
-        });
-      },
-    }, (res) => {
+      lookup: safeLookup,
+    };
+
+    const responseHandler = (res: IncomingMessage) => {
       const chunks: Buffer[] = [];
       let totalSize = 0;
 
@@ -123,13 +131,17 @@ function singleFetch(url: string, timeout: number, externalSignal?: AbortSignal)
         resolve({ status: res.statusCode || 200, headers, body, finalUrl: url, redirectChain: [] });
       });
 
-      res.on('error', (err) => {
+      res.on('error', (err: Error) => {
         clearTimeout(timeoutId);
         reject(err);
       });
-    });
+    };
 
-    req.on('error', (err) => {
+    const req = isHttps
+      ? https.get(url, requestOptions, responseHandler)
+      : http.get(url, requestOptions, responseHandler);
+
+    req.on('error', (err: Error) => {
       clearTimeout(timeoutId);
       reject(err);
     });

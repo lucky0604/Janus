@@ -6,7 +6,7 @@
  * No remote deployment needed — everything runs locally.
  */
 
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron';
 import { spawn } from 'child_process';
 import fs from 'fs';
 
@@ -176,14 +176,86 @@ function getSettingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
+/**
+ * Keys whose VALUES are sensitive and must be encrypted at rest via
+ * Electron's safeStorage (Keychain on macOS, libsecret on Linux, DPAPI on
+ * Windows). Encrypted values are stored as `enc:v1:<base64-ciphertext>` so
+ * we can detect already-encrypted entries on subsequent reads.
+ */
+const ENCRYPTED_KEYS = new Set<string>(['kavis_api_key', 'kavis_code_api_key']);
+const ENC_PREFIX = 'enc:v1:';
+
+function isEncryptionAvailable(): boolean {
+  try {
+    return safeStorage.isEncryptionAvailable();
+  } catch {
+    return false;
+  }
+}
+
+function encryptValue(plain: string): string {
+  if (!plain) return plain;
+  if (plain.startsWith(ENC_PREFIX)) return plain; // already encrypted
+  if (!isEncryptionAvailable()) return plain;     // fallback: store plaintext
+  try {
+    const buf = safeStorage.encryptString(plain);
+    return ENC_PREFIX + buf.toString('base64');
+  } catch (err) {
+    console.warn('[Kavis] safeStorage encrypt failed, storing plaintext:', err);
+    return plain;
+  }
+}
+
+function decryptValue(stored: string): string {
+  if (!stored || !stored.startsWith(ENC_PREFIX)) return stored;
+  if (!isEncryptionAvailable()) return ''; // cannot decrypt — return empty so user re-enters
+  try {
+    const buf = Buffer.from(stored.slice(ENC_PREFIX.length), 'base64');
+    return safeStorage.decryptString(buf);
+  } catch (err) {
+    console.warn('[Kavis] safeStorage decrypt failed:', err);
+    return '';
+  }
+}
+
+/** Read settings from disk and decrypt sensitive fields for the renderer. */
 function loadSettingsFile(): Record<string, string> {
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
     const settings = JSON.parse(raw) as Record<string, string>;
-    return migrateSettingsKeys(settings);
+    const migrated = migrateSettingsKeys(settings);
+    const encryptedAtRest = encryptSensitiveAtRest(migrated);
+    const decrypted: Record<string, string> = {};
+    for (const [k, v] of Object.entries(encryptedAtRest)) {
+      decrypted[k] = ENCRYPTED_KEYS.has(k) ? decryptValue(v) : v;
+    }
+    return decrypted;
   } catch {
     return {};
   }
+}
+
+/**
+ * One-shot migration: if a sensitive key exists in plaintext on disk,
+ * rewrite the file with the encrypted form. Idempotent.
+ */
+function encryptSensitiveAtRest(settings: Record<string, string>): Record<string, string> {
+  let changed = false;
+  const next: Record<string, string> = { ...settings };
+  for (const k of ENCRYPTED_KEYS) {
+    const v = next[k];
+    if (!v) continue;
+    if (v.startsWith(ENC_PREFIX)) continue;
+    const enc = encryptValue(v);
+    if (enc !== v) {
+      next[k] = enc;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveSettingsFile(next);
+  }
+  return next;
 }
 
 /** Migrate legacy janus_* settings keys to kavis_* */
@@ -227,9 +299,15 @@ ipcMain.handle('settings:set', (_event, key: string, value: string) => {
   if (typeof key !== 'string' || typeof value !== 'string') {
     return false;
   }
-  const settings = loadSettingsFile();
-  settings[key] = value;
-  saveSettingsFile(settings);
+  let onDisk: Record<string, string> = {};
+  try {
+    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
+    onDisk = migrateSettingsKeys(JSON.parse(raw) as Record<string, string>);
+  } catch {
+    onDisk = {};
+  }
+  onDisk[key] = ENCRYPTED_KEYS.has(key) ? encryptValue(value) : value;
+  saveSettingsFile(onDisk);
   return true;
 });
 

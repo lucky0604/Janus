@@ -37,10 +37,11 @@ export function handleStreamRoutes(
   if (urlPath === '/api/code-mode/stream' && req.method === 'POST') {
     readBody(req).then((body) => {
       try {
-        const { cliId, prompt, model, workspacePath: bodyWorkspace, sessionId, previousCli } = JSON.parse(body) as {
+        const { cliId, prompt, model, baseUrl, workspacePath: bodyWorkspace, sessionId, previousCli } = JSON.parse(body) as {
           cliId: CliToolId;
           prompt: string;
           model?: string;
+          baseUrl?: string;
           workspacePath?: string;
           sessionId?: string;
           previousCli?: CliToolId;
@@ -100,7 +101,7 @@ export function handleStreamRoutes(
               workspacePath: resolvedWorkspace,
               sessionId: sessionId || `native-${Date.now()}`,
               apiKey,
-              baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+              baseUrl: (baseUrl && baseUrl.trim()) || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
               modelName: model || process.env.OPENAI_MODEL || 'gpt-4o',
               systemPrompt,
             };

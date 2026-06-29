@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
 import { useCodeModeStore } from '../../../stores/code-mode-store';
+import { useChatStore } from '../../../stores/chat-store';
+import { useSceneStore } from '../../../stores/scene-store';
 import type { CliDetectionResult, CliToolId } from '../../../../shared/types';
 import { PickerSheet } from './PickerSheet';
 import { getPreviousCliFromMessages, useIsNarrow } from './composer-hooks';
@@ -109,13 +111,32 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
 
     try {
       const wsParam = `?workspace=${encodeURIComponent(activeProject.path)}`;
+      const chat = useChatStore.getState();
+      const useOverride = chat.codeModeUseOverride;
+      const effectiveApiKey = useOverride ? (chat.codeModeApiKey.trim() || chat.apiKey) : chat.apiKey;
+      const effectiveBaseUrl = useOverride ? (chat.codeModeBaseUrl.trim() || chat.baseUrl) : chat.baseUrl;
+      const effectiveModel = activeModel || (useOverride ? (chat.codeModeModel.trim() || chat.modelName) : chat.modelName);
+
+      if (activeCli === 'kavis-code' && !effectiveApiKey) {
+        const errMsg = '尚未配置 API Key，请先到设置中填写。';
+        applyStreamEvent(sessionId, { type: 'error', data: { message: errMsg } });
+        onStreamEvent?.(sessionId, { type: 'error', data: { message: errMsg } });
+        setSessionExecuting(sessionId, false);
+        useSceneStore.getState().openSettings(useOverride ? 'code' : 'work');
+        return;
+      }
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (effectiveApiKey) headers['X-API-Key'] = effectiveApiKey;
+
       const res = await fetch(`/api/code-mode/stream${wsParam}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           cliId: activeCli,
           prompt,
-          model: activeModel,
+          model: effectiveModel,
+          baseUrl: effectiveBaseUrl.trim(),
           workspacePath: activeProject.path,
           sessionId,
           previousCli,

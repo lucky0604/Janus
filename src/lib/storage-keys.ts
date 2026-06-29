@@ -12,6 +12,10 @@ export const STORAGE_KEYS = {
   ptyHeight: 'kavis_pty_h',
   codeModeSessionId: 'kavis_code_mode_session_id',
   codeModeSessionProject: 'kavis_code_mode_session_project',
+  codeModeApiKey: 'kavis_code_api_key',
+  codeModeBaseUrl: 'kavis_code_base_url',
+  codeModeModel: 'kavis_code_model',
+  codeModeUseOverride: 'kavis_code_use_override',
 } as const;
 
 /** Legacy Janus-era localStorage keys (pre-migration). */
@@ -28,6 +32,10 @@ const LEGACY_KEYS: Record<keyof typeof STORAGE_KEYS, string> = {
   ptyHeight: 'janus_pty_h',
   codeModeSessionId: 'janus_code_mode_session_id',
   codeModeSessionProject: 'janus_code_mode_session_project',
+  codeModeApiKey: 'janus_code_api_key',
+  codeModeBaseUrl: 'janus_code_base_url',
+  codeModeModel: 'janus_code_model',
+  codeModeUseOverride: 'janus_code_use_override',
 };
 
 let migrationDone = false;

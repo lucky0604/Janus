@@ -25,6 +25,8 @@
     "better-sqlite3": "^12.11.1",
     "dotenv": "^16.4.5",
     "gpt-tokenizer": "^2.1.2",
+    "https-proxy-agent": "^9.1.0",
+    "linkedom": "^0.18.12",
     "lucide-react": "^0.400.0",
     "node-pty": "^1.1.0",
     "openai": "^4.55.0",
@@ -35,6 +37,7 @@
     "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "simple-git": "^3.36.0",
+    "undici": "^8.5.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
