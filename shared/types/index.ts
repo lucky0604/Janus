@@ -9,3 +9,4 @@ export * from './agents';
 export * from './session';
 export * from './memory';
 export * from './code-mode';
+export * from './slash';

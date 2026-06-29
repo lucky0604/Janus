@@ -2,7 +2,11 @@ import { useRef, useState, useCallback, KeyboardEvent, useEffect } from 'react';
 import { useAgentStore } from '../../../stores/agent-store';
 import { useChatStore } from '../../../stores/chat-store';
 import { RoleSelector } from './RoleSelector';
-import type { OperatingModeId, AgentRoleId } from '../../../../shared/types';
+import { SlashMenu } from './SlashMenu';
+import { useSlashMenu } from './useSlashMenu';
+import { executeBuiltinCommand, parseSlashLine } from './builtin-commands';
+import { expandSkill } from './skill-loader';
+import type { SlashItem } from '../../../../shared/types';
 import styles from './ChatInput.module.css';
 
 interface ChatInputProps {
@@ -13,60 +17,20 @@ interface ChatInputProps {
   placeholder?: string;
 }
 
-function handleSlashCommand(input: string): { handled: boolean; message?: string } {
-  const trimmed = input.trim();
-  if (!trimmed.startsWith('/')) return { handled: false };
-
-  const parts = trimmed.split(/\s+/);
-  const command = parts[0].toLowerCase();
-  const args = parts.slice(1);
-
-  switch (command) {
-    case '/mode': {
-      const store = useAgentStore.getState();
-      if (args.length === 0) {
-        const lines = store.modes.map(m => `  ${m.id === store.activeMode ? '●' : '○'} ${m.id.padEnd(8)} — ${m.name}`);
-        return { handled: true, message: `Available modes:\n${lines.join('\n')}\n\nUsage: /mode <work|code>` };
-      }
-      const targetMode = args[0].toLowerCase() as OperatingModeId;
-      if (targetMode !== 'work' && targetMode !== 'code') {
-        return { handled: true, message: `Unknown mode: "${targetMode}". Use work or code.` };
-      }
-      store.setMode(targetMode);
-      const modeName = store.modes.find(m => m.id === targetMode)?.name || targetMode;
-      return { handled: true, message: `Switched to ${modeName}` };
-    }
-    case '/role': {
-      const store = useAgentStore.getState();
-      if (store.activeMode !== 'code') {
-        return { handled: true, message: '/role is only available in Code Mode. Use /mode code first.' };
-      }
-      if (args.length === 0) {
-        const lines = store.roles.map(r => `  ${r.id === store.activeRole ? '●' : '○'} ${r.id.padEnd(10)} — ${r.name}`);
-        return { handled: true, message: `Available roles:\n${lines.join('\n')}\n\nUsage: /role <agentic|plan|ask|debug>` };
-      }
-      const targetRole = args[0].toLowerCase() as AgentRoleId;
-      const valid = store.roles.find(r => r.id === targetRole);
-      if (!valid) {
-        return { handled: true, message: `Unknown role: "${targetRole}". Use agentic, plan, ask, or debug.` };
-      }
-      store.setRole(targetRole);
-      return { handled: true, message: `Switched to ${valid.name}` };
-    }
-    case '/clear': {
-      useChatStore.getState().resetSession();
-      return { handled: true, message: 'Session cleared' };
-    }
-    default:
-      return { handled: false };
-  }
+function postSystemMessage(content: string) {
+  useChatStore.getState().addMessage({
+    id: crypto.randomUUID(),
+    role: 'system',
+    content,
+    timestamp: Date.now(),
+  });
 }
 
 export function ChatInput({ onSend, onStop, isStreaming, isConnecting, placeholder }: ChatInputProps) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const slash = useSlashMenu({ value });
 
-  // Cmd+. — cycle through code roles (only in Code Mode)
   useEffect(() => {
     const handle = (e: globalThis.KeyboardEvent) => {
       if (e.key === '.' && (e.metaKey || e.ctrlKey)) {
@@ -84,37 +48,96 @@ export function ChatInput({ onSend, onStop, isStreaming, isConnecting, placehold
     return () => document.removeEventListener('keydown', handle);
   }, []);
 
+  const resetInput = useCallback(() => {
+    setValue('');
+    slash.reset();
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [slash]);
+
+  const triggerSlashItem = useCallback(
+    async (item: SlashItem, rawValue: string) => {
+      const parsed = parseSlashLine(rawValue);
+      const args = parsed?.args ?? [];
+
+      if (item.kind === 'builtin') {
+        const result = executeBuiltinCommand(item.name, args);
+        if (result.handled && result.message) postSystemMessage(result.message);
+        resetInput();
+        return;
+      }
+
+      try {
+        const body = await expandSkill(item, args.join(' '));
+        const trimmed = body.trim();
+        if (!trimmed) {
+          postSystemMessage(`Skill "${item.name}" produced empty content.`);
+          resetInput();
+          return;
+        }
+        resetInput();
+        onSend(trimmed);
+      } catch (err) {
+        postSystemMessage(
+          `Failed to load skill "${item.name}": ${err instanceof Error ? err.message : String(err)}`,
+        );
+        resetInput();
+      }
+    },
+    [onSend, resetInput],
+  );
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || isStreaming || isConnecting) return;
 
-    if (trimmed.startsWith('/')) {
-      const result = handleSlashCommand(trimmed);
+    if (slash.open && slash.items[slash.activeIndex]) {
+      void triggerSlashItem(slash.items[slash.activeIndex], value);
+      return;
+    }
+
+    const parsed = parseSlashLine(trimmed);
+    if (parsed) {
+      const result = executeBuiltinCommand(parsed.command, parsed.args);
       if (result.handled) {
-        if (result.message) {
-          useChatStore.getState().addMessage({
-            id: crypto.randomUUID(),
-            role: 'system',
-            content: result.message,
-            timestamp: Date.now(),
-          });
-        }
-        setValue('');
-        if (textareaRef.current) {
-          textareaRef.current.style.height = 'auto';
-        }
+        if (result.message) postSystemMessage(result.message);
+        resetInput();
         return;
       }
     }
 
     onSend(trimmed);
-    setValue('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-  }, [value, isStreaming, isConnecting, onSend]);
+    resetInput();
+  }, [value, isStreaming, isConnecting, onSend, slash, triggerSlashItem, resetInput]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slash.open) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        slash.setActiveIndex((slash.activeIndex + 1) % slash.items.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        slash.setActiveIndex(
+          (slash.activeIndex - 1 + slash.items.length) % slash.items.length,
+        );
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const item = slash.items[slash.activeIndex];
+        if (item) void triggerSlashItem(item, value);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        slash.close();
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       if (isStreaming) {
@@ -122,7 +145,9 @@ export function ChatInput({ onSend, onStop, isStreaming, isConnecting, placehold
       } else {
         handleSend();
       }
+      return;
     }
+
     if (e.key === 'Escape' && isStreaming) {
       onStop();
     }
@@ -142,6 +167,14 @@ export function ChatInput({ onSend, onStop, isStreaming, isConnecting, placehold
     <div className={styles.composer}>
       <div className={styles.composerInner}>
         <div className={styles.inputArea}>
+          {slash.open && (
+            <SlashMenu
+              items={slash.items}
+              activeIndex={slash.activeIndex}
+              onSelect={(item) => void triggerSlashItem(item, value)}
+              onHover={slash.setActiveIndex}
+            />
+          )}
           <textarea
             ref={textareaRef}
             className={styles.textarea}

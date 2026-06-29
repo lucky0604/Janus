@@ -6,6 +6,7 @@ import { handleApprovalRequest } from './handlers/approval-handler';
 import { handleMessagesRequest } from './handlers/messages-handler';
 import { handleMemoryStatus } from './handlers/memory-handler';
 import { handleAgentsList } from './handlers/agents-handler';
+import { handleSkillsList, handleSkillDetail } from './handlers/skills-handler';
 import { handleSessionRoutes } from './routes/sessions';
 import { handleProjects } from './routes/projects';
 import { handleCodeModeRoutes } from './code-mode/external/handoff-routes';
@@ -55,6 +56,17 @@ export function handleApiRequest(req: IncomingMessage, res: ServerResponse): Pro
 
   if (req.method === 'GET' && pathname === '/agents') {
     return handleAgentsList(req, res);
+  }
+
+  if (req.method === 'GET' && pathname === '/skills') {
+    return handleSkillsList(req, res);
+  }
+
+  if (req.method === 'GET' && pathname.startsWith('/skills/')) {
+    const name = decodeURIComponent(pathname.slice('/skills/'.length));
+    if (name) {
+      return handleSkillDetail(req, res, name);
+    }
   }
 
   // Session management
