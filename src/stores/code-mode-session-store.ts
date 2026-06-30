@@ -186,6 +186,24 @@ export const useCodeModeSessionStore = create<CodeModeSessionState>((set, get) =
     });
   },
 
+  appendLocalSystemMessage: (sessionId, content, tag, kind = 'command') => {
+    if (!sessionId) return;
+    const sysMsg: CodeModeMessage = {
+      id: `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'system',
+      content,
+      systemKind: kind,
+      ...(tag && { systemTag: tag }),
+    };
+    set((state) => {
+      const base = state.sessionCache[sessionId] ?? (state.activeSessionId === sessionId ? state.messages : []);
+      const nextMessages = [...base, sysMsg];
+      const sessionCache = { ...state.sessionCache, [sessionId]: nextMessages };
+      if (state.activeSessionId !== sessionId) return { sessionCache };
+      return { messages: nextMessages, sessionCache };
+    });
+  },
+
   applyStreamEvent: (sessionId, event) => {
     set((state) => {
       const source =

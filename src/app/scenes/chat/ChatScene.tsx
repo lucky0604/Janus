@@ -47,7 +47,7 @@ export function ChatScene() {
         },
         {
           title: 'Explain Core Architecture',
-          text: 'Explain the core architecture of the Janus project and how the agent loop works.',
+          text: 'Explain the core architecture of the Kavis project and how the agent loop works.',
           icon: '🏗️',
         },
         {
@@ -68,7 +68,7 @@ export function ChatScene() {
           },
           {
             title: 'Implement Feature',
-            text: 'Help me design and implement a new feature in the Janus desktop application.',
+            text: 'Help me design and implement a new feature in the Kavis desktop application.',
             icon: '🟣',
           },
         ];
@@ -76,7 +76,7 @@ export function ChatScene() {
         return [
           {
             title: 'Electron Packaging Plan',
-            text: 'Create a detailed step-by-step plan to fully package Janus as an Electron desktop app.',
+            text: 'Create a detailed step-by-step plan to fully package Kavis as an Electron desktop app.',
             icon: '🗺️',
           },
           {
@@ -128,10 +128,10 @@ export function ChatScene() {
     setUserScrolledUp(scrollHeight - scrollTop - clientHeight > 100);
   };
 
-  const emptyName = currentMode?.name || 'Janus';
+  const emptyName = currentMode?.name || 'Kavis';
   const emptyDescription = activeMode === 'code' && currentRole
     ? currentRole.description
-    : (currentMode?.description || 'Ask Janus to investigate, build, or plan');
+    : (currentMode?.description || 'Ask Kavis to investigate, build, or plan');
 
   const handlePromptClick = (promptText: string) => {
     if (isStreaming || isConnecting) return;
@@ -174,7 +174,7 @@ export function ChatScene() {
       <div className={styles.messageArea} ref={listRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <div className={styles.emptyState}>
-            <div className={styles.emptyLogo}> Janus </div>
+            <div className={styles.emptyLogo}> Kavis </div>
             <h2 className={styles.emptyTitle}>{emptyName}</h2>
             <p className={styles.emptyText}>{emptyDescription}</p>
 

@@ -81,24 +81,26 @@ export function toStoreMessages(messages: Message[]): CodeModeMessage[] {
 
 export function toPersistMessages(messages: CodeModeMessage[]): Message[] {
   const now = Date.now();
-  return messages.map((m, i) => {
-    const base: Message = {
-      id: m.id,
-      role: m.role,
-      content: m.content,
-      timestamp: now + i,
-    };
-    const hasMeta = m.cliId || m.nativeSessionId || m.toolCalls || m.thinking;
-    if (hasMeta) {
-      (base as unknown as Record<string, unknown>)._codeMeta = {
-        ...(m.cliId && { cliId: m.cliId }),
-        ...(m.nativeSessionId && { nativeSessionId: m.nativeSessionId }),
-        ...(m.toolCalls && { toolCalls: m.toolCalls }),
-        ...(m.thinking && { thinking: m.thinking }),
+  return messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m, i) => {
+      const base: Message = {
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        timestamp: now + i,
       };
-    }
-    return base;
-  });
+      const hasMeta = m.cliId || m.nativeSessionId || m.toolCalls || m.thinking;
+      if (hasMeta) {
+        (base as unknown as Record<string, unknown>)._codeMeta = {
+          ...(m.cliId && { cliId: m.cliId }),
+          ...(m.nativeSessionId && { nativeSessionId: m.nativeSessionId }),
+          ...(m.toolCalls && { toolCalls: m.toolCalls }),
+          ...(m.thinking && { thinking: m.thinking }),
+        };
+      }
+      return base;
+    });
 }
 
 // ── Cache helper ──

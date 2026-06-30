@@ -35,8 +35,8 @@ export function MessageList({ messages, isStreaming }: MessageListProps) {
       {showThinkingSkeleton && (
         <div className={`${styles.message} ${styles.assistantMessage}`}>
           <div className={styles.messageHeader}>
-            <div className={styles.avatarAssistant}>J</div>
-            <span className={`${styles.senderName} ${styles.senderNameAssistant}`}>Janus</span>
+            <div className={styles.avatarAssistant}>K</div>
+            <span className={`${styles.senderName} ${styles.senderNameAssistant}`}>Kavis</span>
             <span className={styles.aiBadge}>Agent</span>
           </div>
           <div className={styles.content}>

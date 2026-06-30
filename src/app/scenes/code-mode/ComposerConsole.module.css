@@ -285,3 +285,14 @@
 .textInput::placeholder {
   color: var(--color-text-tertiary, #555);
 }
+
+.inputRow {
+  display: flex;
+  gap: 8px;
+  position: relative;
+}
+
+.inputWrap {
+  flex: 1;
+  position: relative;
+}

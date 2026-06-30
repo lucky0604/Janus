@@ -4,9 +4,13 @@ import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store
 import { useCodeModeStore } from '../../../stores/code-mode-store';
 import { useChatStore } from '../../../stores/chat-store';
 import { useSceneStore } from '../../../stores/scene-store';
-import type { CliDetectionResult, CliToolId } from '../../../../shared/types';
+import type { CliDetectionResult, CliToolId, SlashItem } from '../../../../shared/types';
 import { PickerSheet } from './PickerSheet';
 import { getPreviousCliFromMessages, useEffectiveCodeModel, useIsNarrow } from './composer-hooks';
+import { SlashMenu } from '../chat/SlashMenu';
+import { useSlashMenu } from '../chat/useSlashMenu';
+import { executeBuiltinCommand, parseSlashLine } from '../chat/builtin-commands';
+import { expandSkill } from '../chat/skill-loader';
 import styles from './ComposerConsole.module.css';
 
 interface Props {
@@ -22,6 +26,7 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
     activeSessionId,
     ensureSessionBeforeSend,
     applyStreamEvent,
+    appendLocalSystemMessage,
     setSessionExecuting,
     persistSession,
     isSessionExecuting,
@@ -33,6 +38,7 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
   const [sheetType, setSheetType] = useState<'cli' | 'model' | null>(null);
   const abortControllersRef = useRef(new Map<string, AbortController>());
   const isNarrow = useIsNarrow();
+  const slash = useSlashMenu({ value: input });
 
   const { model: activeModel } = useEffectiveCodeModel(cliResults);
 
@@ -71,15 +77,26 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
     setActiveCli(e.target.value as CliToolId);
   };
 
-  const handleSend = async () => {
-    const prompt = input.trim();
-    if (!prompt || isCurrentSessionExecuting) return;
+  const resetInput = useCallback(() => {
+    setInput('');
+    slash.reset();
+  }, [slash]);
 
+  const postSystem = useCallback(
+    (content: string, tag?: string, kind: 'command' | 'skill-error' | 'info' = 'command') => {
+      const sid = useCodeModeSessionStore.getState().activeSessionId;
+      if (!sid) return;
+      appendLocalSystemMessage(sid, content, tag, kind);
+    },
+    [appendLocalSystemMessage],
+  );
+
+  const relayPrompt = useCallback(async (prompt: string): Promise<void> => {
     const activeProject = useProjectStore.getState().getActiveProject();
     if (!activeProject) {
-      const sessionId = useCodeModeSessionStore.getState().activeSessionId;
-      if (sessionId) {
-        applyStreamEvent(sessionId, {
+      const sid = useCodeModeSessionStore.getState().activeSessionId;
+      if (sid) {
+        applyStreamEvent(sid, {
           type: 'error',
           data: { message: 'Import or select a project in the sidebar first.' },
         });
@@ -89,9 +106,9 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
 
     const ready = await ensureSessionBeforeSend();
     if (!ready) {
-      const sessionId = useCodeModeSessionStore.getState().activeSessionId;
-      if (sessionId) {
-        applyStreamEvent(sessionId, {
+      const sid = useCodeModeSessionStore.getState().activeSessionId;
+      if (sid) {
+        applyStreamEvent(sid, {
           type: 'error',
           data: { message: 'Could not start a session for this project.' },
         });
@@ -104,7 +121,6 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
 
     const previousCli = getPreviousCliFromMessages(sessionId);
 
-    setInput('');
     setSessionExecuting(sessionId, true);
     onSend?.(prompt);
 
@@ -117,11 +133,6 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       const useOverride = chat.codeModeUseOverride;
       const effectiveApiKey = useOverride ? (chat.codeModeApiKey.trim() || chat.apiKey) : chat.apiKey;
       const effectiveBaseUrl = useOverride ? (chat.codeModeBaseUrl.trim() || chat.baseUrl) : chat.baseUrl;
-      // activeModel is already the single source of truth (resolveEffectiveModel
-      // handles picked / override-for-kavis-code / cli-default / cli-first).
-      // Only fall back to chat.modelName when activeModel is empty (no cliResult
-      // and no override) — never re-apply codeModeModel here, which would leak
-      // the kavis-code override into other CLIs (codex/claude/opencode).
       const effectiveModel = activeModel || chat.modelName;
 
       if (activeCli === 'kavis-code' && !effectiveApiKey) {
@@ -192,7 +203,67 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       setSessionExecuting(sessionId, false);
       abortControllersRef.current.delete(sessionId);
     }
-  };
+  }, [activeCli, activeModel, applyStreamEvent, ensureSessionBeforeSend, onSend, onStreamEvent, persistSession, setSessionExecuting]);
+
+  const triggerSlashItem = useCallback(
+    async (item: SlashItem, rawValue: string) => {
+      const parsed = parseSlashLine(rawValue);
+      const args = parsed?.args ?? [];
+
+      if (item.kind === 'builtin') {
+        const result = executeBuiltinCommand(item.name, args);
+        if (result.handled && result.message) {
+          postSystem(result.message, item.name, 'command');
+        }
+        resetInput();
+        return;
+      }
+
+      try {
+        const body = await expandSkill(item, args.join(' '));
+        const trimmed = body.trim();
+        if (!trimmed) {
+          postSystem(`Skill "${item.name}" produced empty content.`, item.name, 'skill-error');
+          resetInput();
+          return;
+        }
+        resetInput();
+        await relayPrompt(trimmed);
+      } catch (err) {
+        postSystem(
+          `Failed to load skill "${item.name}": ${err instanceof Error ? err.message : String(err)}`,
+          item.name,
+          'skill-error',
+        );
+        resetInput();
+      }
+    },
+    [postSystem, relayPrompt, resetInput],
+  );
+
+  const handleSend = useCallback(async () => {
+    const prompt = input.trim();
+    if (!prompt || isCurrentSessionExecuting) return;
+
+    if (slash.open && slash.items[slash.activeIndex]) {
+      await triggerSlashItem(slash.items[slash.activeIndex], input);
+      return;
+    }
+
+    const parsed = parseSlashLine(prompt);
+    if (parsed) {
+      const result = executeBuiltinCommand(parsed.command, parsed.args);
+      if (result.handled) {
+        if (result.message) postSystem(result.message, parsed.command, 'command');
+        resetInput();
+        return;
+      }
+    }
+
+    setInput('');
+    slash.reset();
+    await relayPrompt(prompt);
+  }, [input, isCurrentSessionExecuting, postSystem, relayPrompt, resetInput, slash, triggerSlashItem]);
 
   const handleCancel = () => {
     if (!activeSessionId) return;
@@ -264,27 +335,62 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <input
-          type="text"
-          className={styles.textInput}
-          placeholder={
-            !activeProjectId
-              ? 'Import a project to start…'
-              : isCurrentSessionExecuting
-                ? 'Executing...'
-                : 'Type a message to relay...'
-          }
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={!canSend}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              void handleSend();
+      <div className={styles.inputRow}>
+        <div className={styles.inputWrap}>
+          {slash.open && (
+            <SlashMenu
+              items={slash.items}
+              activeIndex={slash.activeIndex}
+              onSelect={(item) => void triggerSlashItem(item, input)}
+              onHover={slash.setActiveIndex}
+            />
+          )}
+          <input
+            type="text"
+            className={styles.textInput}
+            placeholder={
+              !activeProjectId
+                ? 'Import a project to start…'
+                : isCurrentSessionExecuting
+                  ? 'Executing...'
+                  : 'Type a message to relay, or / for commands…'
             }
-          }}
-        />
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={!canSend}
+            onKeyDown={(e) => {
+              if (slash.open) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  slash.setActiveIndex((slash.activeIndex + 1) % slash.items.length);
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  slash.setActiveIndex(
+                    (slash.activeIndex - 1 + slash.items.length) % slash.items.length,
+                  );
+                  return;
+                }
+                if (e.key === 'Tab') {
+                  e.preventDefault();
+                  const item = slash.items[slash.activeIndex];
+                  if (item) void triggerSlashItem(item, input);
+                  return;
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  slash.close();
+                  return;
+                }
+              }
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                void handleSend();
+              }
+            }}
+          />
+        </div>
         {isCurrentSessionExecuting && (
           <button onClick={handleCancel} className={styles.cancelButton}>
             Cancel

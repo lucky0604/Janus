@@ -64,8 +64,8 @@ export function MessageBubble({ message, isStreaming, i: msgIndex, messagesCount
     if (message.role === 'assistant') {
       return (
         <div className={styles.messageHeader}>
-          <div className={styles.avatarAssistant}>J</div>
-          <span className={`${styles.senderName} ${styles.senderNameAssistant}`}>Janus</span>
+          <div className={styles.avatarAssistant}>K</div>
+          <span className={`${styles.senderName} ${styles.senderNameAssistant}`}>Kavis</span>
           <span className={styles.aiBadge}>Agent</span>
         </div>
       );

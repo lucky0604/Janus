@@ -17,7 +17,7 @@ export function TerminalSpikeScene() {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isResizing, setIsResizing] = useState(false);
 
-  // 1. Verify JanusNative Bridge
+  // 1. Verify KavisNative Bridge
   useEffect(() => {
     if (window.kavisNative && typeof window.kavisNative.ptyCreate === 'function') {
       setBridgeStatus('loaded');
@@ -86,7 +86,7 @@ export function TerminalSpikeScene() {
 
         // Subscribe to PTY exit
         unsubscribeExit = window.kavisNative.onPtyExit(id, (exitRes) => {
-          term.write(`\r\n\r\n[Janus PTY] Shell exited with code ${exitRes.exitCode}\r\n`);
+          term.write(`\r\n\r\n[Kavis PTY] Shell exited with code ${exitRes.exitCode}\r\n`);
           setPtyStatus('exited');
           setPtyPid(null);
         });

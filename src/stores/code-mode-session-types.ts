@@ -17,7 +17,7 @@ export interface CodeModeHookEvent {
 
 export interface CodeModeMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   cliId?: CliToolId;
   nativeSessionId?: string;
@@ -25,6 +25,10 @@ export interface CodeModeMessage {
   hookEvents?: CodeModeHookEvent[];
   thinking?: string;
   progress?: string[];
+  /** For role==='system': the slash command name that produced this message (e.g. 'mode', 'clear'). */
+  systemKind?: 'command' | 'skill-error' | 'info';
+  /** For role==='system': the command name shown as a prefix tag. */
+  systemTag?: string;
 }
 
 export interface CodeModeSessionState {
@@ -43,6 +47,7 @@ export interface CodeModeSessionState {
   loadSession: (sessionId: string, projectPath?: string) => Promise<void>;
   clearActiveSession: () => void;
   appendExchange: (userContent: string, cliId?: CliToolId) => void;
+  appendLocalSystemMessage: (sessionId: string, content: string, tag?: string, kind?: 'command' | 'skill-error' | 'info') => void;
   applyStreamEvent: (sessionId: string, event: { type: string; data: unknown }) => void;
   setSessionExecuting: (sessionId: string, executing: boolean) => void;
   isSessionExecuting: (sessionId: string) => boolean;

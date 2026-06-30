@@ -10,6 +10,7 @@ import { OnboardingDashboard } from './OnboardingDashboard';
 import { ProjectSidebar } from './ProjectSidebar';
 import { CodeModeHeader } from './CodeModeHeader';
 import { ThinkingBlock, ToolEventBlock, ProgressBlock, HookEventBlock } from './CodeModeMessageBlocks';
+import { SystemNotice } from './SystemNotice';
 import { applyRelayToolEvent } from './relay-tool-events';
 import { applyApprovalStreamEvent, attachApprovalHandlers } from './relay-approval-events';
 import { useProjectStore } from '../../../stores/project-store';
@@ -123,8 +124,16 @@ export function CodeModeScene() {
           ) : (
             <div className={msgStyles.messageList}>
               {messages.map((msg, i) => {
-                // Detect CLI switch boundary: if this is an assistant message
-                // with a different cliId than the previous assistant message
+                if (msg.role === 'system') {
+                  return (
+                    <SystemNotice
+                      key={msg.id}
+                      tag={msg.systemTag}
+                      kind={msg.systemKind}
+                      content={msg.content}
+                    />
+                  );
+                }
                 const prevAssistant = (() => {
                   for (let j = i - 1; j >= 0; j--) {
                     if (messages[j].role === 'assistant') return messages[j];
@@ -162,8 +171,8 @@ export function CodeModeScene() {
                     </div>
                   ) : (
                     <div className={msgStyles.messageHeader}>
-                      <div className={msgStyles.avatarAssistant}>J</div>
-                      <span className={`${msgStyles.senderName} ${msgStyles.senderNameAssistant}`}>Janus</span>
+                      <div className={msgStyles.avatarAssistant}>K</div>
+                      <span className={`${msgStyles.senderName} ${msgStyles.senderNameAssistant}`}>Kavis</span>
                       <span className={msgStyles.aiBadge}>{cliBadge}</span>
                     </div>
                   )}
