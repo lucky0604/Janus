@@ -1,4 +1,14 @@
-import type { ToolCardData } from './InspectorPane';
+/**
+ * @deprecated Use code-run-store for normalized tool call state.
+ * This file is kept for backward compatibility with existing tests.
+ */
+export interface ToolCardData {
+  id: string;
+  name: string;
+  status: 'running' | 'done' | 'error';
+  summary: string;
+  diff?: string;
+}
 
 /** Parse heterogeneous CLI NDJSON into a normalized tool call, or null if not a real tool. */
 export function parseRelayToolCall(data: unknown): { id: string; name: string; summary: string } | null {

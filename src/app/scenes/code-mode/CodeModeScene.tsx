@@ -1,23 +1,28 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { CodeModeLayout } from './CodeModeLayout';
 import { ComposerConsole } from './ComposerConsole';
-import { InspectorPane, type ToolCardData, type ApprovalCardData } from './InspectorPane';
+import { InspectorPane, type ApprovalCardData } from './InspectorPane';
 import { PtyDrawer } from './PtyDrawer';
 import { OnboardingDashboard } from './OnboardingDashboard';
 import { ProjectSidebar } from './ProjectSidebar';
 import { CodeModeHeader } from './CodeModeHeader';
-import { ThinkingBlock, ToolEventBlock, ProgressBlock, HookEventBlock } from './CodeModeMessageBlocks';
+import { ThinkingBlock } from './CodeModeMessageBlocks';
+import { ToolActivityBlock } from './ToolActivityBlock';
+import { RunStatusBar } from './RunStatusBar';
 import { SystemNotice } from './SystemNotice';
-import { applyRelayToolEvent } from './relay-tool-events';
 import { applyApprovalStreamEvent, attachApprovalHandlers } from './relay-approval-events';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
 import { useCodeModeStore } from '../../../stores/code-mode-store';
+import { useCodeRunStore } from '../../../stores/code-run-store';
+import type { ToolCallState } from '../../../stores/code-run-types';
 import emptyStyles from './CodeModeEmpty.module.css';
 import msgStyles from '../chat/MessageList.module.css';
+
+const EMPTY_TOOL_CALLS: ToolCallState[] = [];
 
 export function CodeModeScene() {
   const { projects, activeProjectId } = useProjectStore();
@@ -30,15 +35,9 @@ export function CodeModeScene() {
   } = useCodeModeSessionStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const initializedProjectIdRef = useRef<string | null>(null);
-  const toolsCacheRef = useRef(new Map<string, ToolCardData[]>());
   const approvalsCacheRef = useRef(new Map<string, ApprovalCardData[]>());
-  const [tools, setTools] = useStateTools(activeSessionId, toolsCacheRef);
   const [approvals, setApprovals] = useStateApprovals(activeSessionId, approvalsCacheRef);
 
-  // Derive messages from the session cache keyed by activeSessionId.
-  // This is the single source of truth — immune to async race conditions
-  // where the store's top-level `messages` field could temporarily lag
-  // behind an activeSessionId change.
   const messages = activeSessionId
     ? (sessionCache[activeSessionId] ?? [])
     : [];
@@ -46,10 +45,39 @@ export function CodeModeScene() {
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
   const isThinking = activeSessionId ? isSessionExecuting(activeSessionId) : false;
 
+  // Run state from normalized store — selectors return stable references only
+  const activeRunId = useCodeRunStore((s) =>
+    activeSessionId ? s.activeRunBySession[activeSessionId] : undefined,
+  );
+  const activeRun = useCodeRunStore((s) =>
+    activeRunId ? s.runsById[activeRunId] : undefined,
+  );
+  const toolCallsById = useCodeRunStore((s) => s.toolCallsById);
+  const activeRunToolCalls = useMemo(() => {
+    if (!activeRun) return EMPTY_TOOL_CALLS;
+    const result = activeRun.toolCallIds
+      .map((id) => toolCallsById[id])
+      .filter((tc): tc is ToolCallState => !!tc);
+    return result.length > 0 ? result : EMPTY_TOOL_CALLS;
+  }, [activeRun, toolCallsById]);
+  const currentToolCall = useMemo(() => {
+    if (!activeRun?.currentToolCallId) return undefined;
+    return toolCallsById[activeRun.currentToolCallId];
+  }, [activeRun?.currentToolCallId, toolCallsById]);
+
+  // Group tool calls by the assistant message they belong to.
+  // Tool calls from the active run are shown on the last assistant message.
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant') return i;
+    }
+    return -1;
+  }, [messages]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  }, [messages, activeRunToolCalls.length]);
 
   useEffect(() => {
     if (!activeProject) return;
@@ -63,17 +91,12 @@ export function CodeModeScene() {
   const handleUserSend = useCallback((prompt: string) => {
     if (!activeSessionId) return;
     appendExchange(prompt, activeCli || undefined);
-    toolsCacheRef.current.set(activeSessionId, []);
     approvalsCacheRef.current.set(activeSessionId, []);
-    setTools([]);
     setApprovals([]);
   }, [appendExchange, activeSessionId, activeCli]);
 
   const handleStreamEvent = useCallback((sessionId: string, event: { type: string; data: unknown }) => {
-    const prevTools = toolsCacheRef.current.get(sessionId) ?? [];
-    const nextTools = applyRelayToolEvent(prevTools, event);
-    toolsCacheRef.current.set(sessionId, nextTools);
-
+    // Approval events still use local state (they need callback handlers)
     const prevApprovals = approvalsCacheRef.current.get(sessionId) ?? [];
     let nextApprovals = applyApprovalStreamEvent(prevApprovals, event);
     if (event.type === 'approval_required') {
@@ -92,10 +115,14 @@ export function CodeModeScene() {
     approvalsCacheRef.current.set(sessionId, nextApprovals);
 
     if (sessionId === useCodeModeSessionStore.getState().activeSessionId) {
-      setTools(nextTools);
       setApprovals(nextApprovals);
     }
   }, []);
+
+  const handleCancel = useCallback(() => {
+    if (!activeSessionId) return;
+    useCodeRunStore.getState().cancelRun(activeSessionId);
+  }, [activeSessionId]);
 
   const showProjectOnboarding = projects.length === 0;
   const showProjectReady = !showProjectOnboarding && !!activeProject;
@@ -149,6 +176,9 @@ export function CodeModeScene() {
                   ? msg.cliId.charAt(0).toUpperCase() + msg.cliId.slice(1)
                   : 'Relay';
 
+                const isLastAssistant = i === lastAssistantIndex;
+                const showToolActivity = isLastAssistant && activeRunToolCalls.length > 0;
+
                 return (
                 <div key={msg.id}>
                   {showHandoffDivider && (
@@ -179,43 +209,18 @@ export function CodeModeScene() {
                   <div className={msgStyles.content}>
                     {msg.role === 'assistant' ? (
                       <>
-                        {/* Inline thinking block */}
                         {msg.thinking && <ThinkingBlock text={msg.thinking} />}
 
-                        {/* Inline progress logs */}
-                        {msg.progress && msg.progress.length > 0 && <ProgressBlock logs={msg.progress} />}
-
-                        {/* Inline hook lifecycle events */}
-                        {msg.hookEvents && msg.hookEvents.length > 0 && (
-                          <div style={{ margin: '4px 0' }}>
-                            {msg.hookEvents.map((he) => (
-                              <HookEventBlock
-                                key={he.id}
-                                hookType={he.hookType}
-                                status={he.status}
-                                round={he.round}
-                                detail={he.detail}
-                              />
-                            ))}
-                          </div>
+                        {showToolActivity && (
+                          <ToolActivityBlock toolCalls={activeRunToolCalls} />
                         )}
 
-                        {/* Inline tool call cards */}
-                        {msg.toolCalls && msg.toolCalls.length > 0 && (
-                          <div style={{ margin: '4px 0' }}>
-                            {msg.toolCalls.map((tc) => (
-                              <ToolEventBlock key={tc.id} tool={tc} />
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Main text content */}
                         {msg.content ? (
                           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
                             {msg.content}
                           </ReactMarkdown>
                         ) : (
-                          isThinking && i === messages.length - 1 && !msg.thinking && !msg.toolCalls ? (
+                          isThinking && i === messages.length - 1 && !msg.thinking && activeRunToolCalls.length === 0 ? (
                             <div className={msgStyles.thinkingContainer}>
                               <div className={msgStyles.thinkingDot} />
                               <div className={msgStyles.thinkingDot} />
@@ -252,10 +257,15 @@ export function CodeModeScene() {
           <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
             {chatBody}
           </div>
+          <RunStatusBar
+            run={activeRun}
+            currentToolCall={currentToolCall}
+            onCancel={handleCancel}
+          />
           <ComposerConsole onStreamEvent={handleStreamEvent} onSend={handleUserSend} />
         </div>
       }
-      inspector={<InspectorPane tools={tools} approvals={approvals} />}
+      inspector={<InspectorPane sessionId={activeSessionId} approvals={approvals} />}
     />
   );
 }
@@ -267,24 +277,6 @@ function shortenPath(p: string): string {
   }
   if (p.length > 48) return '…' + p.slice(-45);
   return p;
-}
-
-/** Restore inspector tools when switching sessions. */
-function useStateTools(
-  activeSessionId: string | null,
-  cacheRef: MutableRefObject<Map<string, ToolCardData[]>>,
-): [ToolCardData[], Dispatch<SetStateAction<ToolCardData[]>>] {
-  const [tools, setTools] = useState<ToolCardData[]>([]);
-
-  useEffect(() => {
-    if (!activeSessionId) {
-      setTools([]);
-      return;
-    }
-    setTools(cacheRef.current.get(activeSessionId) ?? []);
-  }, [activeSessionId, cacheRef]);
-
-  return [tools, setTools];
 }
 
 function useStateApprovals(

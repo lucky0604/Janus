@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useProjectStore } from '../../../stores/project-store';
 import { useCodeModeSessionStore } from '../../../stores/code-mode-session-store';
 import { useCodeModeStore } from '../../../stores/code-mode-store';
+import { useCodeRunStore } from '../../../stores/code-run-store';
+import { adaptStreamEvent } from '../../../stores/code-run-event-adapter';
 import { useChatStore } from '../../../stores/chat-store';
 import { useSceneStore } from '../../../stores/scene-store';
 import type { CliDetectionResult, CliToolId, SlashItem } from '../../../../shared/types';
@@ -37,6 +39,7 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
   const [input, setInput] = useState('');
   const [sheetType, setSheetType] = useState<'cli' | 'model' | null>(null);
   const abortControllersRef = useRef(new Map<string, AbortController>());
+  const activeRunIdRef = useRef<string | null>(null);
   const isNarrow = useIsNarrow();
   const slash = useSlashMenu({ value: input });
 
@@ -124,6 +127,10 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
     setSessionExecuting(sessionId, true);
     onSend?.(prompt);
 
+    const { dispatchEvent, startRun } = useCodeRunStore.getState();
+    const runId = startRun(sessionId);
+    activeRunIdRef.current = runId;
+
     const abort = new AbortController();
     abortControllersRef.current.set(sessionId, abort);
 
@@ -138,7 +145,7 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       if (activeCli === 'kavis-code' && !effectiveApiKey) {
         const errMsg = '尚未配置 API Key，请先到设置中填写。';
         applyStreamEvent(sessionId, { type: 'error', data: { message: errMsg } });
-        onStreamEvent?.(sessionId, { type: 'error', data: { message: errMsg } });
+        dispatchEvent({ type: 'run_failed', sessionId, runId, error: errMsg, timestamp: Date.now() });
         setSessionExecuting(sessionId, false);
         useSceneStore.getState().openSettings(useOverride ? 'code' : 'work');
         return;
@@ -164,7 +171,7 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
 
       if (!res.ok || !res.body) {
         applyStreamEvent(sessionId, { type: 'error', data: { message: `HTTP ${res.status}` } });
-        onStreamEvent?.(sessionId, { type: 'error', data: { message: `HTTP ${res.status}` } });
+        dispatchEvent({ type: 'run_failed', sessionId, runId, error: `HTTP ${res.status}`, timestamp: Date.now() });
         return;
       }
 
@@ -186,6 +193,12 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
               const event = JSON.parse(line.slice(6));
               applyStreamEvent(sessionId, event);
               onStreamEvent?.(sessionId, event);
+
+              const agentEvents = adaptStreamEvent(sessionId, runId, event);
+              for (const ae of agentEvents) {
+                dispatchEvent(ae);
+              }
+
               if (event.type === 'done') {
                 await persistSession(sessionId);
               }
@@ -197,11 +210,14 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
       if ((err as Error).name !== 'AbortError') {
         const errorEvent = { type: 'error', data: { message: String(err) } };
         applyStreamEvent(sessionId, errorEvent);
-        onStreamEvent?.(sessionId, errorEvent);
+        dispatchEvent({ type: 'run_failed', sessionId, runId, error: String(err), timestamp: Date.now() });
+      } else {
+        dispatchEvent({ type: 'run_cancelled', sessionId, runId, timestamp: Date.now() });
       }
     } finally {
       setSessionExecuting(sessionId, false);
       abortControllersRef.current.delete(sessionId);
+      activeRunIdRef.current = null;
     }
   }, [activeCli, activeModel, applyStreamEvent, ensureSessionBeforeSend, onSend, onStreamEvent, persistSession, setSessionExecuting]);
 
@@ -268,6 +284,7 @@ export function ComposerConsole({ onStreamEvent, onSend }: Props) {
   const handleCancel = () => {
     if (!activeSessionId) return;
     abortControllersRef.current.get(activeSessionId)?.abort();
+    useCodeRunStore.getState().cancelRun(activeSessionId);
   };
 
   const currentCli = cliResults.find((c) => c.id === activeCli);
