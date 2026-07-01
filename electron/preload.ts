@@ -25,6 +25,11 @@ const nativeBridge = {
     return ipcRenderer.sendSync('get-version');
   },
 
+  /** Get Electron server port (for API calls in dev mode) */
+  getServerPort: (): number | null => {
+    return ipcRenderer.sendSync('get-server-port');
+  },
+
   /** Listen for menu events from main process */
   onMenuAction: (callback: (action: string) => void) => {
     ipcRenderer.on('menu-action', (_event, action) => callback(action));

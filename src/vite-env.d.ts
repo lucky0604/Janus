@@ -9,6 +9,7 @@ interface KavisNativeBridge {
   platform: string;
   selectFolder: () => Promise<string | null>;
   getVersion: () => string;
+  getServerPort: () => number | null;
   onMenuAction: (callback: (action: string) => void) => void;
   ptyCreate: (options: { id: string; cwd?: string; cols?: number; rows?: number }) => Promise<{ success: boolean; pid?: number; shell?: string; error?: string }>;
   ptyWrite: (args: { id: string; data: string }) => Promise<{ success: boolean; error?: string }>;

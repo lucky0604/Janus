@@ -8,9 +8,11 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --packages=external --outdir=electron --format=esm --external:electron --external:node-pty && electron .",
-    "build": "tsc -b && vite build && esbuild electron/main.ts electron/preload.ts --bundle --platform=node --packages=external --outdir=electron --format=esm --external:electron --external:node-pty",
+    "dev:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --packages=external --outdir=electron --format=esm --external:electron --external:node-pty --external:better-sqlite3 && electron .",
+    "build": "tsc -b && vite build && esbuild electron/main.ts electron/preload.ts --bundle --platform=node --packages=external --outdir=electron --format=esm --external:electron --external:node-pty --external:better-sqlite3",
     "build:electron": "npm run build && electron-builder",
+    "postinstall": "node scripts/rebuild-native-modules.js",
+    "rebuild-native": "node scripts/rebuild-native-modules.js",
     "preview": "vite preview",
     "start": "tsx server/prod.ts",
     "typecheck": "tsc --noEmit",
@@ -43,6 +45,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/electron": "^1.4.38",
     "@types/react": "^18.3.5",

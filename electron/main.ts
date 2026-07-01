@@ -62,35 +62,37 @@ async function startServer(): Promise<number | undefined> {
   const isDev = !app.isPackaged;
 
   if (isDev) {
-    // Dev mode: spawn Vite dev server and wait for it
-    const devUrl = 'http://localhost:5173';
+    // Dev mode: start HTTP server in Electron main process (same Node.js ABI)
+    const promptsDir = path.join(__dirname, '..', 'server', 'shared', 'agents', 'prompts');
 
     try {
-      // Check if Vite is already running (e.g. user started it manually)
-      await waitForServer(devUrl, 1000);
-      console.log('[Kavis] Vite dev server already running');
-      return undefined; // Vite handles both frontend and API
-    } catch {
-      // Not running — spawn it
-      console.log('[Kavis] Starting Vite dev server...');
-      viteDevProc = spawn('npx', ['vite'], {
-        cwd: path.resolve(__dirname, '..'),
-        stdio: 'inherit',
-        shell: true,
-      });
+      // Use fixed port for Vite proxy compatibility
+      const DEV_SERVER_PORT = 8787;
+      const { createKavisServer } = await import('../server/prod.js');
+      const kavisServer = await createKavisServer(undefined, DEV_SERVER_PORT, promptsDir);
+      serverHandle = kavisServer;
+      console.log(`[Kavis] Embedded server started on port ${DEV_SERVER_PORT}`);
 
-      viteDevProc.on('error', (err) => {
-        console.error('[Kavis] Failed to start Vite:', err);
-      });
+      // Spawn Vite for frontend hot reload only (Vite no longer handles API routes)
+      const viteUrl = 'http://localhost:5173';
+      try {
+        await waitForServer(viteUrl, 1000);
+        console.log('[Kavis] Vite dev server already running');
+      } catch {
+        console.log('[Kavis] Starting Vite dev server...');
+        viteDevProc = spawn('npx', ['vite'], {
+          cwd: path.resolve(__dirname, '..'),
+          stdio: 'inherit',
+          shell: true,
+        });
+        await waitForServer(viteUrl, 30000);
+        console.log('[Kavis] Vite dev server ready');
+      }
 
-      viteDevProc.on('exit', (code) => {
-        if (code && code !== 0) {
-          console.warn('[Kavis] Vite exited with code', code);
-        }
-      });
-
-      await waitForServer(devUrl, 30000);
-      console.log('[Kavis] Vite dev server ready');
+      return DEV_SERVER_PORT;
+    } catch (err) {
+      const msg = err instanceof Error ? (err.stack || err.message) : String(err);
+      console.error('[Kavis] Failed to start embedded server in dev:', msg);
       return undefined;
     }
   }
@@ -161,6 +163,10 @@ ipcMain.handle('select-folder', async () => {
 
 ipcMain.on('get-version', (event) => {
   event.returnValue = app.getVersion();
+});
+
+ipcMain.on('get-server-port', (event) => {
+  event.returnValue = serverHandle?.port || null;
 });
 
 // Menu action channel — currently no menu sends these, but the preload
